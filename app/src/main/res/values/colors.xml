@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <color name="vibe_primary">#2563EB</color>
+    <color name="vibe_primary_dark">#1D4ED8</color>
+    <color name="vibe_primary_light">#EFF6FF</color>
+    <color name="vibe_blue">#2563EB</color>
+    <color name="vibe_blue_dark">#1D4ED8</color>
+    <color name="vibe_accent">#0D9488</color>
+
+    <color name="vibe_background">#F8FAFC</color>
+    <color name="vibe_surface">#FFFFFF</color>
+    <color name="vibe_card_stroke">#E2E8F0</color>
+
+    <color name="vibe_text">#0F172A</color>
+    <color name="vibe_text_secondary">#64748B</color>
+
+    <color name="vibe_recording_red">#EF4444</color>
+    <color name="vibe_recording_bg">#FEF2F2</color>
+
+    <color name="vibe_idle_grey">#94A3B8</color>
+
+    <color name="vibe_success_green">#10B981</color>
+    <color name="vibe_success_bg">#ECFDF5</color>
+
+    <color name="vibe_info_bg">#F0F9FF</color>
+    <color name="vibe_info_stroke">#BAE6FD</color>
+</resources>

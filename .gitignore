@@ -1,0 +1,41 @@
+# Build artifacts and caches
+*.iml
+.gradle/
+.gradle-dist/
+.idea/
+.kotlin/
+build/
+app/build/
+captures/
+.externalNativeBuild/
+.cxx/
+
+# Environment-specific configuration
+local.properties
+secrets.properties
+
+# Generated outputs & packages
+*.apk
+*.aab
+*.ap_
+
+# Test session dumps & large audio files
+*.pcm
+*.wav
+*.csv
+*.zip
+session_*/
+VibeCallSessions/
+
+# Python virtual environment & caches
+.venv/
+venv/
+ENV/
+__pycache__/
+*.pyc
+tools/__pycache__/
+
+# OS and IDE caches
+.DS_Store
+Thumbs.db
+*.log
