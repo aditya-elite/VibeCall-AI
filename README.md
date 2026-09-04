@@ -123,12 +123,28 @@ The tool produces a synchronized 4-panel analysis:
 
 ---
 
-## 🗺️ Project Roadmap
-- [x] **Milestone 1**: Feasibility sensor acquisition app & ground-truth validation (Current)
-- [x] **Milestone 2**: Frequency correlation & proof of cheek-conducted acoustic resonance
-- [ ] **Milestone 3**: RNNoise + accelerometer energy gating integration
-- [ ] **Milestone 4**: Objective A/B audio benchmark ($\ge 3\text{ dB}$ SNR improvement)
-- [ ] **Milestone 5**: Qualcomm Snapdragon NPU quantization & latency optimization for iQOO 15
+## 🗺️ Project Roadmap & Engineering Status
+
+See [ROADMAP.md](ROADMAP.md) for full mathematical formulation, task ownership, and implementation guides.
+
+### Status Check: What's Built vs. What's Left
+
+| What's Built & Verified ✅ | What's Left to Build ⏳ |
+| :--- | :--- |
+| **Synchronized Mobile Capture**: Android app recording 16 kHz audio + 400 Hz accelerometer | **Pretrained RNNoise Integration**: Wire local RNNoise denoiser into the audio pipeline |
+| **Physical Feasibility Proven**: Accelerometer detected vocal fundamental (**144.53 Hz vs 144.42 Hz**, **11.4× power ratio**) | **Accelerometer Energy Gating**: Heuristic speech gating logic based on contact vibration energy |
+| **Hardware Stability**: Held ~400.8 Hz across quiet speech, background noise, and humming | **Bandpass Filter**: 80–200 Hz digital filter to eliminate hand movement artifacts (<80 Hz) |
+| **Automated Data Packaging**: One-touch session ZIP creation and Android FileProvider sharing | **A/B Audio Benchmark**: Objective comparative demo (**Original vs. Mic-Only vs. VibeCall**) with $\ge 3\text{ dB}$ SNR gain |
+| **Desktop Analysis Tool**: Automated waveform, PSD, and spectrogram generation | **Snapdragon NPU Benchmark**: INT8 quantization & latency testing on **iQOO 15** (*Stretch*) |
+
+---
+
+## 🚀 Immediate Next Steps for Demo Day
+
+1. **Step 1 (Filtering)**: Implement an 80–200 Hz Butterworth bandpass on the accelerometer Z-axis to isolate vocal cord vibrations from phone handling.
+2. **Step 2 (RNNoise + Gating)**: Combine the RNNoise denoiser with an energy threshold gate driven by the filtered accelerometer RMS.
+3. **Step 3 (A/B Test Bench)**: Feed a noisy test sentence through both pipelines and output a 3-way comparative WAV (`Noisy` vs. `Mic-Only` vs. `VibeCall Fusion`).
+4. **Step 4 (Video & Pitch)**: Record the A/B listening demo and benchmark on iQOO hardware for the hackathon presentation.
 
 ---
 
