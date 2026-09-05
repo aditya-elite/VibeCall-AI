@@ -7,10 +7,14 @@ import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
 import android.os.SystemClock
+import android.content.Context
+import android.util.Log
 import android.view.View
+import android.view.ViewGroup
 import android.widget.AutoCompleteTextView
 import android.widget.ArrayAdapter
 import android.widget.Button
+import android.widget.ImageView
 import android.widget.TextView
 import android.widget.Toast
 import androidx.activity.result.contract.ActivityResultContracts
@@ -90,18 +94,48 @@ class MainActivity : AppCompatActivity() {
 
         findViewById<TextView>(R.id.deviceInfoText).text = recorder.deviceSummary()
 
-        val tests = listOf(
-            "Table - silent baseline",
-            "Cheek - speaking in quiet",
-            "Cheek - speaking with background noise"
+        // Verify NNAPI NPU acceleration on launch (satisfies Step 2 before recording)
+        val npuText = findViewById<TextView>(R.id.npuStatusText)
+        val npuIcon = findViewById<ImageView>(R.id.npuStatusIcon)
+        try {
+            val warmup = FusionGateModel(this)
+            warmup.close()
+            npuText.text = "NPU Hardware Acceleration: Active (NNAPI)"
+            npuText.setTextColor(ContextCompat.getColor(this, R.color.vibe_success_green))
+            npuIcon.setImageResource(R.drawable.ic_shield_check)
+            npuIcon.imageTintList = ContextCompat.getColorStateList(this, R.color.vibe_success_green)
+        } catch (e: Exception) {
+            Log.w("MainActivity", "NPU init pre-check: ${e.message}")
+            npuText.text = "NPU Status: CPU Fallback (${e.message ?: "Check Logcat"})"
+            npuText.setTextColor(ContextCompat.getColor(this, R.color.vibe_recording_red))
+            npuIcon.setImageResource(R.drawable.ic_info)
+            npuIcon.imageTintList = ContextCompat.getColorStateList(this, R.color.vibe_recording_red)
+        }
+
+        // Setup enhanced presets with icons, badges and descriptions
+        val presets = listOf(
+            PresetItem(
+                "Cheek - speaking with background noise",
+                "Key A/B benchmark (vocal cord vs ambient noise)",
+                R.drawable.ic_wave,
+                R.color.vibe_recording_red
+            ),
+            PresetItem(
+                "Cheek - speaking in quiet",
+                "Clean vocal vibration reference",
+                R.drawable.ic_mic,
+                R.color.vibe_accent
+            ),
+            PresetItem(
+                "Table - silent baseline",
+                "Stationary sensor noise floor",
+                R.drawable.ic_sensors,
+                R.color.vibe_primary
+            )
         )
-        val adapter = ArrayAdapter(
-            this,
-            R.layout.dropdown_menu_item,
-            tests
-        )
+        val adapter = PresetAdapter(this, presets)
         testAutoCompleteTextView.setAdapter(adapter)
-        testAutoCompleteTextView.setText(tests[0], false)
+        testAutoCompleteTextView.setText(presets[0].title, false)
 
         startButton.setOnClickListener { requestPermissionAndStart() }
         stopButton.setOnClickListener { finishRecording() }
@@ -209,3 +243,35 @@ class MainActivity : AppCompatActivity() {
         super.onDestroy()
     }
 }
+
+data class PresetItem(
+    val title: String,
+    val subtitle: String,
+    val iconRes: Int,
+    val tintColorRes: Int
+) {
+    override fun toString(): String = title
+}
+
+class PresetAdapter(
+    context: Context,
+    private val items: List<PresetItem>
+) : ArrayAdapter<PresetItem>(context, R.layout.dropdown_menu_item, android.R.id.text1, items) {
+
+    override fun getView(position: Int, convertView: View?, parent: ViewGroup): View {
+        val view = super.getView(position, convertView, parent)
+        val item = items[position]
+        val icon = view.findViewById<ImageView>(R.id.itemIcon)
+        val title = view.findViewById<TextView>(android.R.id.text1)
+        val subtitle = view.findViewById<TextView>(R.id.itemSubtitle)
+
+        title.text = item.title
+        subtitle.text = item.subtitle
+        icon.setImageResource(item.iconRes)
+        icon.imageTintList = ContextCompat.getColorStateList(context, item.tintColorRes)
+        return view
+    }
+
+    override fun getItem(position: Int): PresetItem = items[position]
+}
+

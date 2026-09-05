@@ -1,13 +1,49 @@
 <?xml version="1.0" encoding="utf-8"?>
-<TextView xmlns:android="http://schemas.android.com/apk/res/android"
-    android:id="@android:id/text1"
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
     android:layout_width="match_parent"
     android:layout_height="wrap_content"
-    android:ellipsize="end"
+    android:background="?attr/selectableItemBackground"
     android:gravity="center_vertical"
-    android:maxLines="1"
-    android:minHeight="48dp"
+    android:minHeight="56dp"
+    android:orientation="horizontal"
     android:paddingHorizontal="16dp"
-    android:paddingVertical="12dp"
-    android:textColor="@color/vibe_text"
-    android:textSize="15sp" />
+    android:paddingVertical="10dp">
+
+    <ImageView
+        android:id="@+id/itemIcon"
+        android:layout_width="22dp"
+        android:layout_height="22dp"
+        android:layout_marginEnd="14dp"
+        android:contentDescription="Preset Option Icon"
+        android:src="@drawable/ic_wave"
+        app:tint="@color/vibe_primary" />
+
+    <LinearLayout
+        android:layout_width="0dp"
+        android:layout_height="wrap_content"
+        android:layout_weight="1"
+        android:orientation="vertical">
+
+        <TextView
+            android:id="@android:id/text1"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:ellipsize="end"
+            android:fontFamily="sans-serif-medium"
+            android:maxLines="1"
+            android:textColor="@color/vibe_text"
+            android:textSize="14.5sp" />
+
+        <TextView
+            android:id="@+id/itemSubtitle"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="2dp"
+            android:ellipsize="end"
+            android:maxLines="1"
+            android:textColor="@color/vibe_text_secondary"
+            android:textSize="11.5sp" />
+    </LinearLayout>
+
+</LinearLayout>

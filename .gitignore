@@ -24,6 +24,7 @@ secrets.properties
 *.wav
 *.csv
 *.zip
+sessions/
 session_*/
 VibeCallSessions/
 

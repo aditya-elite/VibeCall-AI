@@ -14,6 +14,7 @@ import android.os.Environment
 import android.os.Handler
 import android.os.HandlerThread
 import android.os.SystemClock
+import android.util.Log
 import org.json.JSONObject
 import java.io.BufferedWriter
 import java.io.File
@@ -40,7 +41,8 @@ data class SessionResult(
     val zipFile: File,
     val accelerometerSamples: Long,
     val audioSamples: Long,
-    val measuredSensorRateHz: Double
+    val measuredSensorRateHz: Double,
+    val averageTrustValue: Double = 1.0
 )
 
 class SessionRecorder(
@@ -81,8 +83,26 @@ class SessionRecorder(
     private val audioSamples = AtomicLong(0)
     private var audioReadError: String? = null
 
+    // NPU Fusion Gate Model integration
+    private var fusionGateModel: FusionGateModel? = null
+    private var gatedPcmFile: File? = null
+    private var gatedWavFile: File? = null
+    @Volatile
+    private var latestAccelX: Float = 0f
+    @Volatile
+    private var latestAccelY: Float = 0f
+    @Volatile
+    private var latestAccelZ: Float = 0f
+    @Volatile
+    private var latestTrustValue: Float = 1.0f
+    private var totalTrustValue: Double = 0.0
+    private var trustInferenceCount: Long = 0L
+
     val isRecording: Boolean
         get() = recording
+
+    val currentTrustValue: Float
+        get() = latestTrustValue
 
     fun deviceSummary(): String = buildString {
         appendLine("Device: ${Build.MANUFACTURER} ${Build.MODEL}")
@@ -101,6 +121,8 @@ class SessionRecorder(
         sessionDirectory = directory
         pcmFile = File(directory, "microphone.pcm")
         wavFile = File(directory, "microphone.wav")
+        gatedPcmFile = File(directory, "gated_microphone.pcm")
+        gatedWavFile = File(directory, "gated_microphone.wav")
         sensorWriter = BufferedWriter(
             OutputStreamWriter(FileOutputStream(File(directory, "accelerometer.csv")), Charsets.UTF_8),
             64 * 1024
@@ -113,7 +135,17 @@ class SessionRecorder(
         firstSensorTimestampNs = 0L
         lastSensorTimestampNs = 0L
         audioReadError = null
+        latestAccelX = 0f
+        latestAccelY = 0f
+        latestAccelZ = 0f
+        latestTrustValue = 1.0f
+        totalTrustValue = 0.0
+        trustInferenceCount = 0L
         sessionStartElapsedNs = SystemClock.elapsedRealtimeNanos()
+
+        fusionGateModel = runCatching { FusionGateModel(context) }
+            .onFailure { Log.w("SessionRecorder", "Failed to initialize FusionGateModel", it) }
+            .getOrNull()
 
         val recorder = buildAudioRecord()
         audioRecord = recorder
@@ -145,8 +177,9 @@ class SessionRecorder(
 
         audioDone = CountDownLatch(1)
         val outputPcm = pcmFile ?: error("PCM output was not created")
+        val outputGatedPcm = gatedPcmFile
         audioExecutor.execute {
-            recordAudioLoop(recorder, outputPcm)
+            recordAudioLoop(recorder, outputPcm, outputGatedPcm)
         }
     }
 
@@ -194,9 +227,20 @@ class SessionRecorder(
                 writeWav(pcm, wav, AUDIO_SAMPLE_RATE, 1, 16)
                 pcm.delete()
 
+                val gatedPcm = gatedPcmFile
+                val gatedWav = gatedWavFile
+                if (gatedPcm != null && gatedWav != null && gatedPcm.exists() && gatedPcm.length() > 0) {
+                    writeWav(gatedPcm, gatedWav, AUDIO_SAMPLE_RATE, 1, 16)
+                    gatedPcm.delete()
+                }
+
+                fusionGateModel?.close()
+                fusionGateModel = null
+
                 val directory = sessionDirectory ?: error("Missing session directory")
                 val measuredRate = measuredSensorRateHz()
-                writeMetadata(directory, measuredRate)
+                val avgTrust = if (trustInferenceCount > 0) totalTrustValue / trustInferenceCount else 1.0
+                writeMetadata(directory, measuredRate, avgTrust)
                 val zip = zipSession(directory)
 
                 SessionResult(
@@ -204,7 +248,8 @@ class SessionRecorder(
                     zipFile = zip,
                     accelerometerSamples = sensorSamples.get(),
                     audioSamples = audioSamples.get(),
-                    measuredSensorRateHz = measuredRate
+                    measuredSensorRateHz = measuredRate,
+                    averageTrustValue = avgTrust
                 )
             }
             onComplete(result)
@@ -213,6 +258,10 @@ class SessionRecorder(
 
     override fun onSensorChanged(event: SensorEvent) {
         if (!recording || event.sensor.type != Sensor.TYPE_ACCELEROMETER) return
+
+        latestAccelX = event.values[0]
+        latestAccelY = event.values[1]
+        latestAccelZ = event.values[2]
 
         val count = sensorSamples.incrementAndGet()
         if (firstSensorTimestampNs == 0L) firstSensorTimestampNs = event.timestamp
@@ -242,6 +291,8 @@ class SessionRecorder(
 
     fun close() {
         if (!recording) {
+            fusionGateModel?.close()
+            fusionGateModel = null
             sensorThread.quitSafely()
             audioExecutor.shutdown()
         }
@@ -286,25 +337,72 @@ class SessionRecorder(
             }
     }
 
-    private fun recordAudioLoop(recorder: AudioRecord, outputFile: File) {
+    private fun recordAudioLoop(recorder: AudioRecord, outputFile: File, gatedFile: File?) {
         val buffer = ByteArray(4_096)
         try {
-            FileOutputStream(outputFile).use { output ->
-                while (recording) {
-                    val read = recorder.read(buffer, 0, buffer.size, AudioRecord.READ_BLOCKING)
-                    when {
-                        read > 0 -> {
-                            output.write(buffer, 0, read)
-                            audioSamples.addAndGet((read / 2).toLong())
-                        }
-                        read < 0 -> {
-                            if (recording) {
-                                audioReadError = "AudioRecord.read returned $read"
+            val gatedStream = gatedFile?.let { FileOutputStream(it) }
+            try {
+                FileOutputStream(outputFile).use { output ->
+                    while (recording) {
+                        val read = recorder.read(buffer, 0, buffer.size, AudioRecord.READ_BLOCKING)
+                        when {
+                            read > 0 -> {
+                                // 1. Preserve original microphone PCM capture unchanged
+                                output.write(buffer, 0, read)
+                                audioSamples.addAndGet((read / 2).toLong())
+
+                                // 2. Compute audioVariance (normalized 16-bit PCM samples)
+                                val numSamples = read / 2
+                                var sum = 0.0
+                                var sumSq = 0.0
+                                for (i in 0 until numSamples) {
+                                    val low = buffer[i * 2].toInt() and 0xFF
+                                    val high = buffer[i * 2 + 1].toInt()
+                                    val sample = ((high shl 8) or low).toShort()
+                                    val norm = sample / 32768.0f
+                                    sum += norm
+                                    sumSq += norm * norm
+                                }
+                                val mean = sum / numSamples
+                                val variance = max(0.0, (sumSq / numSamples) - (mean * mean)).toFloat()
+
+                                // 3. Run NPU fusion gate model with audioVariance & accelerometer readings
+                                val trust = fusionGateModel?.getTrustValue(
+                                    audioVariance = variance,
+                                    accelX = latestAccelX,
+                                    accelY = latestAccelY,
+                                    accelZ = latestAccelZ
+                                ) ?: 1.0f
+
+                                latestTrustValue = trust
+                                totalTrustValue += trust
+                                trustInferenceCount++
+
+                                // 4. Scale audio by trustValue to produce gated audio output
+                                if (gatedStream != null) {
+                                    val gatedBuffer = ByteArray(read)
+                                    for (i in 0 until numSamples) {
+                                        val low = buffer[i * 2].toInt() and 0xFF
+                                        val high = buffer[i * 2 + 1].toInt()
+                                        val rawSample = ((high shl 8) or low).toShort()
+                                        val scaledSample = (rawSample * trust).toInt().coerceIn(-32768, 32767).toShort()
+                                        gatedBuffer[i * 2] = (scaledSample.toInt() and 0xFF).toByte()
+                                        gatedBuffer[i * 2 + 1] = ((scaledSample.toInt() shr 8) and 0xFF).toByte()
+                                    }
+                                    gatedStream.write(gatedBuffer, 0, read)
+                                }
                             }
-                            break
+                            read < 0 -> {
+                                if (recording) {
+                                    audioReadError = "AudioRecord.read returned $read"
+                                }
+                                break
+                            }
                         }
                     }
                 }
+            } finally {
+                gatedStream?.close()
             }
         } catch (error: Exception) {
             audioReadError = error.message ?: error.javaClass.simpleName
@@ -339,7 +437,7 @@ class SessionRecorder(
         }
     }
 
-    private fun writeMetadata(directory: File, measuredRate: Double) {
+    private fun writeMetadata(directory: File, measuredRate: Double, averageTrust: Double) {
         val utcFormatter = SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss.SSS'Z'", Locale.US).apply {
             timeZone = TimeZone.getTimeZone("UTC")
         }
@@ -347,6 +445,12 @@ class SessionRecorder(
             put("format_version", 1)
             put("created_utc", utcFormatter.format(Date()))
             put("test_label", sessionLabel)
+            put("npu_fusion_enabled", true)
+            put("npu_model_name", "fusion_gate_model.tflite")
+            put("npu_delegate", "NNAPI")
+            put("fusion_inference_count", trustInferenceCount)
+            put("average_trust_value", averageTrust)
+            put("gated_audio_file", if (gatedWavFile?.exists() == true) "gated_microphone.wav" else JSONObject.NULL)
             put("manufacturer", Build.MANUFACTURER)
             put("model", Build.MODEL)
             put("android_release", Build.VERSION.RELEASE)

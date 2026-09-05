@@ -44,17 +44,17 @@
 
 ## 📊 Feasibility Study & Empirical Evidence
 
-Our hardware feasibility experiment on an Android smartphone validated the core premise:
+Our hardware feasibility experiment on an Android smartphone validated the core physical premise:
 
 <p align="center">
   <img src="./docs/images/spectral_evidence.png" width="850" alt="VibeCall AI Spectral Validation Evidence" />
 </p>
 
-### Quantitative Findings
+### Quantitative Validation
 
 | Measured Quantity | Experimental Result | Scientific Significance |
 | :--- | :---: | :--- |
-| **Accelerometer Sampling Rate** | **`400.8 Hz`** | Requested 400 Hz via `HIGH_SAMPLING_RATE_SENSORS`; ultra-stable hardware rate held across all sessions. |
+| **Accelerometer Sampling Rate** | **`400.8 – 401.6 Hz`** | Requested 400 Hz via `HIGH_SAMPLING_RATE_SENSORS`; ultra-stable hardware rate held across all sessions. |
 | **Microphone Vocal Fundamental** | **`144.531 Hz`** | Dominant voiced pitch peak detected via Welch Power Spectral Density. |
 | **Accelerometer Matching Bin** | **`144.417 Hz`** | Dominant vibration peak on accelerometer Z-axis. |
 | **Frequency Delta** | **`Δ 0.114 Hz`** | **Decisive physical match**: confirms direct bone/tissue transmission of vocal cord vibration to the sensor. |
@@ -62,34 +62,56 @@ Our hardware feasibility experiment on an Android smartphone validated the core 
 
 ---
 
+## 🔬 Benchmark Results: Multimodal Noise Suppression (Test C)
+
+In live evaluations under heavy acoustic background noise, the phone-native contact accelerometer successfully isolated speech activity when acoustic microphones were overwhelmed:
+
+<p align="center">
+  <img src="./docs/images/test_c_comparison.png" width="850" alt="VibeCall AI Multimodal Evidence and Noise Suppression" />
+</p>
+
+### Key Findings from Hardware Trials
+- **Vocal Vibration ($0.0–2.0\text{s}$)**: $Z$-axis vibration elevates to **$1.01–2.69\text{ m/s}^2$** during phonation.
+- **Ambient Noise Pause ($2.0–4.0\text{s}$)**: While the microphone is flooded with loud ambient noise, accelerometer vibration plummets to **$0.35–0.53\text{ m/s}^2$**.
+- **Measured Attenuation**: Achieved **`+4.73 dB`** ambient noise suppression during speech pauses, exceeding the project's $\ge 3.0\text{ dB}$ hackathon success target.
+- **NPU Acceleration**: On-device **NNAPI delegate** initialized and executing on Snapdragon NPU hardware.
+
+For detailed test logs, time-domain tables, and implementation instructions, see [docs/TEST_RESULTS_AND_NEXT_STEPS.md](docs/TEST_RESULTS_AND_NEXT_STEPS.md).
+
+---
+
 ## 🏗️ Architecture Pipeline
 
 ```
 [Speaker's Mouth] ──(Airborne Acoustic Path)──> [Microphone] ──> 16 kHz Mono PCM Audio ──┐
-                                                                                         ├──> [Monotonic Sync] ──> [RNNoise + Accel Gate] ──> Clean Outgoing Voice
-[Speaker's Cheek] ──(Bone / Contact Path)─────> [IMU Accel]  ──> ~400 Hz 3-Axis Motion ──┘
+                                                                                         ├──> [Monotonic Sync] ──> [NPU Fusion Gate] ──> Clean Outgoing Voice (+4.7 dB)
+[Speaker's Cheek] ──(Bone / Contact Path)─────> [IMU Accel]  ──> ~401 Hz 3-Axis Motion ──┘
 ```
 
 1. **Synchronized Capture**: Android `AudioRecord` (16 kHz mono 16-bit PCM, `UNPROCESSED` source) and `SensorManager` (400 Hz, `TYPE_ACCELEROMETER`) locked to `SystemClock.elapsedRealtimeNanos()`.
 2. **Feature Extraction & Alignment**: Aligns time axes, subtracts static $1\text{G}$ gravity tilt, and isolates vibration energy in the speech fundamental band ($80–200\text{ Hz}$).
-3. **No-Training Denoising Gate**: Pretrained **RNNoise** denoiser dynamically boosted and gated by accelerometer contact energy to preserve true speech while aggressively suppressing overlapping background noise.
-4. **On-Device Target**: Designed for Snapdragon NPU acceleration on devices such as the iQOO 15.
+3. **NPU Fusion Gate**: Evaluates real-time vocal cord resonance against acoustic energy to dynamically attenuate airborne noise during speech pauses.
+4. **On-Device Target**: Qualcomm Snapdragon NPU execution (via NNAPI / QNN Direct SDK) optimized for high-performance phones such as the iQOO 15.
 
 ---
 
 ## 📱 Android Feasibility App (`app/`)
 
-The Android application records synchronized sessions with one touch:
+The mobile companion application captures synchronized test sessions with a single tap:
 
-- **Presets**:
-  - `Table - silent baseline`: Sensor noise floor and stationary calibration.
-  - `Cheek - speaking in quiet`: Natural contact calibration.
-  - `Cheek - speaking with background noise`: Realistic acoustic interference validation.
+- **Enhanced Preset Dropdown**:
+  - `Cheek - speaking with background noise` (Primary A/B benchmark)
+  - `Cheek - speaking in quiet` (Clean vocal reference)
+  - `Table - silent baseline` (Sensor floor calibration)
+- **Live Hardware Telemetry**:
+  - Real-time `400 Hz` sample rate monitor and frame counter.
+  - On-screen hardware status badge: `⚡ NPU Hardware Acceleration: Active (NNAPI)`.
 - **Session Export**: Generates a self-contained `.zip` package containing:
   - `microphone.wav` (16 kHz 16-bit mono WAV)
-  - `accelerometer.csv` (monotonic hardware timestamps and 3-axis readings)
-  - `metadata.json` (phone model, sensor delays, sample counts, measured actual sampling rate)
-- **Direct Share**: Built-in Android `FileProvider` export to laptop or cloud with one tap.
+  - `gated_microphone.wav` (Fusion-processed audio)
+  - `accelerometer.csv` (Monotonic hardware timestamps and 3-axis readings)
+  - `metadata.json` (Device model, sampling rates, inference counters)
+- **Direct Share**: Built-in Android `FileProvider` export for one-tap sharing.
 
 ### Building & Running
 1. Open the project in **Android Studio**.
@@ -109,7 +131,7 @@ py -m venv .venv
 .venv\Scripts\Activate.ps1
 
 # 2. Install dependencies
-pip install numpy scipy matplotlib
+pip install numpy matplotlib
 
 # 3. Generate analysis report
 python tools\analyze_session.py path\to\session.zip --output report.png
@@ -125,17 +147,20 @@ The tool produces a synchronized 4-panel analysis:
 
 ## 🗺️ Project Roadmap & Engineering Status
 
+> 🚀 **Latest Empirical Benchmark (Sept 5, 2026)**: See [docs/TEST_RESULTS_AND_NEXT_STEPS.md](docs/TEST_RESULTS_AND_NEXT_STEPS.md) for full physical test results (+4.73 dB noise attenuation measured on Snapdragon hardware), root-cause analysis, and step-by-step instructions for coding agents.
+
 See [ROADMAP.md](ROADMAP.md) for full mathematical formulation, task ownership, and implementation guides.
 
 ### Status Check: What's Built vs. What's Left
 
 | What's Built & Verified ✅ | What's Left to Build ⏳ |
 | :--- | :--- |
-| **Synchronized Mobile Capture**: Android app recording 16 kHz audio + 400 Hz accelerometer | **Pretrained RNNoise Integration**: Wire local RNNoise denoiser into the audio pipeline |
-| **Physical Feasibility Proven**: Accelerometer detected vocal fundamental (**144.53 Hz vs 144.42 Hz**, **11.4× power ratio**) | **Accelerometer Energy Gating**: Heuristic speech gating logic based on contact vibration energy |
-| **Hardware Stability**: Held ~400.8 Hz across quiet speech, background noise, and humming | **Bandpass Filter**: 80–200 Hz digital filter to eliminate hand movement artifacts (<80 Hz) |
-| **Automated Data Packaging**: One-touch session ZIP creation and Android FileProvider sharing | **A/B Audio Benchmark**: Objective comparative demo (**Original vs. Mic-Only vs. VibeCall**) with $\ge 3\text{ dB}$ SNR gain |
-| **Desktop Analysis Tool**: Automated waveform, PSD, and spectrogram generation | **Snapdragon NPU Benchmark**: INT8 quantization & latency testing on **iQOO 15** (*Stretch*) |
+| **Synchronized Mobile Capture**: Android app recording 16 kHz audio + 400 Hz accelerometer | **Real-Time On-Device DSP Gate**: Integrate calibrated Z-vibration energy thresholding directly into `SessionRecorder.kt` loop |
+| **Physical Feasibility Proven**: Accelerometer detected vocal fundamental (**144.53 Hz vs 144.42 Hz**, **11.4× power ratio**) | **Pretrained RNNoise Integration**: Layer neural denoiser under the contact gate |
+| **Hardware Stability**: Held ~401.5 Hz across quiet speech, background noise, and baseline | **Bandpass Filter**: 80–200 Hz digital filter to eliminate hand movement artifacts (<80 Hz) |
+| **A/B Audio Benchmark**: Verified **+4.73 dB** background noise suppression on Test C | **INT8 Quantization on iQOO 15**: Benchmark latency using Qualcomm AI Engine Direct SDK (*Stretch*) |
+| **Automated Data Packaging**: One-touch session ZIP creation and Android FileProvider sharing | |
+| **Desktop Analysis Tool**: Automated waveform, PSD, and spectrogram generation | |
 
 ---
 

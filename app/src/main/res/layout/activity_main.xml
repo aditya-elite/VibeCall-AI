@@ -168,24 +168,65 @@
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
                     android:layout_marginTop="12dp"
-                    app:boxCornerRadiusBottomEnd="12dp"
-                    app:boxCornerRadiusBottomStart="12dp"
-                    app:boxCornerRadiusTopEnd="12dp"
-                    app:boxCornerRadiusTopStart="12dp"
+                    app:boxBackgroundColor="#F8FAFC"
+                    app:boxCornerRadiusBottomEnd="14dp"
+                    app:boxCornerRadiusBottomStart="14dp"
+                    app:boxCornerRadiusTopEnd="14dp"
+                    app:boxCornerRadiusTopStart="14dp"
                     app:boxStrokeColor="@color/vibe_primary"
-                    app:hintEnabled="false">
+                    app:boxStrokeWidth="1.5dp"
+                    app:boxStrokeWidthFocused="2dp"
+                    app:endIconTint="@color/vibe_primary"
+                    app:hintEnabled="false"
+                    app:startIconDrawable="@drawable/ic_tune"
+                    app:startIconTint="@color/vibe_primary">
 
                     <AutoCompleteTextView
                         android:id="@+id/testAutoCompleteTextView"
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
+                        android:dropDownVerticalOffset="6dp"
+                        android:fontFamily="sans-serif-medium"
                         android:inputType="none"
-                        android:paddingHorizontal="16dp"
+                        android:paddingStart="4dp"
+                        android:paddingEnd="16dp"
                         android:paddingVertical="14dp"
+                        android:popupBackground="@drawable/bg_dropdown_popup"
                         android:textColor="@color/vibe_text"
-                        android:textSize="15sp" />
+                        android:textSize="14.5sp" />
 
                 </com.google.android.material.textfield.TextInputLayout>
+
+                <!-- Hardware NPU Status Indicator -->
+                <LinearLayout
+                    android:id="@+id/npuStatusBadge"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="10dp"
+                    android:background="@drawable/bg_npu_badge"
+                    android:gravity="center_vertical"
+                    android:orientation="horizontal"
+                    android:paddingHorizontal="12dp"
+                    android:paddingVertical="8dp">
+
+                    <ImageView
+                        android:id="@+id/npuStatusIcon"
+                        android:layout_width="16dp"
+                        android:layout_height="16dp"
+                        android:contentDescription="NPU Status Icon"
+                        android:src="@drawable/ic_shield_check"
+                        app:tint="@color/vibe_success_green" />
+
+                    <TextView
+                        android:id="@+id/npuStatusText"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:layout_marginStart="8dp"
+                        android:fontFamily="sans-serif-medium"
+                        android:text="NPU Hardware: Initializing NNAPI…"
+                        android:textColor="@color/vibe_success_green"
+                        android:textSize="12sp" />
+                </LinearLayout>
             </LinearLayout>
         </com.google.android.material.card.MaterialCardView>
 
