@@ -156,3 +156,24 @@ Following the initial baseline trials, `fusion_gate_model_v2.tflite` was deploye
 - **NPU Performance**: 49 inferences completed on Snapdragon NNAPI hardware delegate with zero audio latency or dropouts.
 - **Proof Plot**: `docs/images/test_c_v2_comparison.png`.
 
+---
+
+## 8. Model v3 Hardware Trial & Validation (+15.5 dB Gating Achieved)
+
+Following Model v2 validation, `fusion_gate_model_v3.tflite` was deployed to the Motorola edge 50 fusion.
+
+### Quantitative Hardware Results (Model v3)
+
+| Trial | Test Label | Average Trust Value | Inferences | Attenuation / Suppression | Duration |
+| :--- | :--- | :---: | :---: | :---: | :---: |
+| **Test C (v3)** | `Cheek - speaking with background noise` | **`0.1100`** | 107 | **`15.49 dB` live attenuation** | 13.62 s |
+
+- **Empirical Measured Result**: **`0.1100`** average trust across 107 NPU inferences
+- **Audio Power Levels**:
+  - Raw Microphone: $\text{RMS} = 1049.92$
+  - On-Device Gated Microphone: $\text{RMS} = 176.36$
+  - **Dynamic Level Reduction**: $\mathbf{15.49\text{ dB}}$ (over $+5.2\text{ dB}$ improvement compared to Model v2)
+- **IMU High-Speed Rate**: 5,474 accelerometer samples captured at **`401.32 Hz`**
+- **NPU Performance**: 107 continuous inferences completed on Snapdragon NNAPI hardware delegate with zero audio latency or dropouts over a 13.62-second evaluation window.
+- **Proof Plot**: `docs/images/test_c_v3_comparison.png`.
+
