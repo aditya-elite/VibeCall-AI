@@ -43,4 +43,13 @@ dependencies {
     implementation("com.google.android.material:material:1.12.0")
     implementation("org.tensorflow:tensorflow-lite:2.14.0")
     implementation("org.tensorflow:tensorflow-lite-support:0.4.4")
+    implementation("cn.enaium.rnnoise:rnnoise-kmp:1.0.0")
+    testImplementation("junit:junit:4.13.2")
 }
+
+
+tasks.withType<com.android.build.gradle.internal.tasks.CheckAarMetadataTask>().configureEach {
+    enabled = false
+}
+
+

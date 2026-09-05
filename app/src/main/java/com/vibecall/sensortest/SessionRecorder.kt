@@ -42,7 +42,8 @@ data class SessionResult(
     val accelerometerSamples: Long,
     val audioSamples: Long,
     val measuredSensorRateHz: Double,
-    val averageTrustValue: Double = 1.0
+    val averageTrustValue: Double = 1.0,
+    val rnnoiseWavFile: File? = null
 )
 
 class SessionRecorder(
@@ -98,11 +99,23 @@ class SessionRecorder(
     private var totalTrustValue: Double = 0.0
     private var trustInferenceCount: Long = 0L
 
+    // RNNoise neural denoising integration
+    private var rnnoiseProcessor: RnnoiseProcessor? = null
+    private var rnnoisePcmFile: File? = null
+    private var rnnoiseWavFile: File? = null
+
     val isRecording: Boolean
         get() = recording
 
     val currentTrustValue: Float
         get() = latestTrustValue
+
+    val latestRnnoiseWav: File?
+        get() = rnnoiseWavFile
+
+    val latestRawWav: File?
+        get() = wavFile
+
 
     fun deviceSummary(): String = buildString {
         appendLine("Device: ${Build.MANUFACTURER} ${Build.MODEL}")
@@ -123,6 +136,8 @@ class SessionRecorder(
         wavFile = File(directory, "microphone.wav")
         gatedPcmFile = File(directory, "gated_microphone.pcm")
         gatedWavFile = File(directory, "gated_microphone.wav")
+        rnnoisePcmFile = File(directory, "microphone_rnnoise.pcm")
+        rnnoiseWavFile = File(directory, "microphone_rnnoise.wav")
         sensorWriter = BufferedWriter(
             OutputStreamWriter(FileOutputStream(File(directory, "accelerometer.csv")), Charsets.UTF_8),
             64 * 1024
@@ -146,6 +161,11 @@ class SessionRecorder(
         fusionGateModel = runCatching { FusionGateModel(context) }
             .onFailure { Log.w("SessionRecorder", "Failed to initialize FusionGateModel", it) }
             .getOrNull()
+
+        rnnoiseProcessor = runCatching { RnnoiseProcessor() }
+            .onFailure { Log.w("SessionRecorder", "Failed to initialize RnnoiseProcessor", it) }
+            .getOrNull()
+
 
         val recorder = buildAudioRecord()
         audioRecord = recorder
@@ -234,8 +254,17 @@ class SessionRecorder(
                     gatedPcm.delete()
                 }
 
+                val rnnoisePcm = rnnoisePcmFile
+                val rnnoiseWav = rnnoiseWavFile
+                if (rnnoisePcm != null && rnnoiseWav != null && rnnoisePcm.exists() && rnnoisePcm.length() > 0) {
+                    writeWav(rnnoisePcm, rnnoiseWav, AUDIO_SAMPLE_RATE, 1, 16)
+                    rnnoisePcm.delete()
+                }
+
                 fusionGateModel?.close()
                 fusionGateModel = null
+                rnnoiseProcessor?.close()
+                rnnoiseProcessor = null
 
                 val directory = sessionDirectory ?: error("Missing session directory")
                 val measuredRate = measuredSensorRateHz()
@@ -249,7 +278,8 @@ class SessionRecorder(
                     accelerometerSamples = sensorSamples.get(),
                     audioSamples = audioSamples.get(),
                     measuredSensorRateHz = measuredRate,
-                    averageTrustValue = avgTrust
+                    averageTrustValue = avgTrust,
+                    rnnoiseWavFile = rnnoiseWav
                 )
             }
             onComplete(result)
@@ -293,10 +323,13 @@ class SessionRecorder(
         if (!recording) {
             fusionGateModel?.close()
             fusionGateModel = null
+            rnnoiseProcessor?.close()
+            rnnoiseProcessor = null
             sensorThread.quitSafely()
             audioExecutor.shutdown()
         }
     }
+
 
     private fun buildAudioRecord(): AudioRecord {
         val audioManager = context.getSystemService(AudioManager::class.java)
@@ -341,6 +374,7 @@ class SessionRecorder(
         val buffer = ByteArray(4_096)
         try {
             val gatedStream = gatedFile?.let { FileOutputStream(it) }
+            val rnnoiseStream = rnnoisePcmFile?.let { FileOutputStream(it) }
             try {
                 FileOutputStream(outputFile).use { output ->
                     while (recording) {
@@ -351,14 +385,16 @@ class SessionRecorder(
                                 output.write(buffer, 0, read)
                                 audioSamples.addAndGet((read / 2).toLong())
 
-                                // 2. Compute audioVariance (normalized 16-bit PCM samples)
+                                // 2. Convert buffer bytes to ShortArray for variance, gating, and denoising
                                 val numSamples = read / 2
+                                val shortSamples = ShortArray(numSamples)
                                 var sum = 0.0
                                 var sumSq = 0.0
                                 for (i in 0 until numSamples) {
                                     val low = buffer[i * 2].toInt() and 0xFF
                                     val high = buffer[i * 2 + 1].toInt()
                                     val sample = ((high shl 8) or low).toShort()
+                                    shortSamples[i] = sample
                                     val norm = sample / 32768.0f
                                     sum += norm
                                     sumSq += norm * norm
@@ -382,14 +418,26 @@ class SessionRecorder(
                                 if (gatedStream != null) {
                                     val gatedBuffer = ByteArray(read)
                                     for (i in 0 until numSamples) {
-                                        val low = buffer[i * 2].toInt() and 0xFF
-                                        val high = buffer[i * 2 + 1].toInt()
-                                        val rawSample = ((high shl 8) or low).toShort()
+                                        val rawSample = shortSamples[i]
                                         val scaledSample = (rawSample * trust).toInt().coerceIn(-32768, 32767).toShort()
                                         gatedBuffer[i * 2] = (scaledSample.toInt() and 0xFF).toByte()
                                         gatedBuffer[i * 2 + 1] = ((scaledSample.toInt() shr 8) and 0xFF).toByte()
                                     }
                                     gatedStream.write(gatedBuffer, 0, read)
+                                }
+
+                                // 5. RNNoise real-time neural denoising (independent clean audio track)
+                                if (rnnoiseStream != null && rnnoiseProcessor != null) {
+                                    val denoised16k = rnnoiseProcessor?.processStream(shortSamples, numSamples)
+                                    if (denoised16k != null && denoised16k.isNotEmpty()) {
+                                        val rnnoiseBytes = ByteArray(denoised16k.size * 2)
+                                        for (i in denoised16k.indices) {
+                                            val s = denoised16k[i].toInt()
+                                            rnnoiseBytes[i * 2] = (s and 0xFF).toByte()
+                                            rnnoiseBytes[i * 2 + 1] = ((s shr 8) and 0xFF).toByte()
+                                        }
+                                        rnnoiseStream.write(rnnoiseBytes)
+                                    }
                                 }
                             }
                             read < 0 -> {
@@ -400,9 +448,24 @@ class SessionRecorder(
                             }
                         }
                     }
+
+                    // Flush any remaining buffered audio in RNNoise accumulator
+                    if (rnnoiseStream != null && rnnoiseProcessor != null) {
+                        val flushed16k = rnnoiseProcessor?.flush()
+                        if (flushed16k != null && flushed16k.isNotEmpty()) {
+                            val rnnoiseBytes = ByteArray(flushed16k.size * 2)
+                            for (i in flushed16k.indices) {
+                                val s = flushed16k[i].toInt()
+                                rnnoiseBytes[i * 2] = (s and 0xFF).toByte()
+                                rnnoiseBytes[i * 2 + 1] = ((s shr 8) and 0xFF).toByte()
+                            }
+                            rnnoiseStream.write(rnnoiseBytes)
+                        }
+                    }
                 }
             } finally {
                 gatedStream?.close()
+                rnnoiseStream?.close()
             }
         } catch (error: Exception) {
             audioReadError = error.message ?: error.javaClass.simpleName
@@ -410,6 +473,7 @@ class SessionRecorder(
             audioDone.countDown()
         }
     }
+
 
     private fun measuredSensorRateHz(): Double {
         val count = sensorSamples.get()
@@ -451,6 +515,8 @@ class SessionRecorder(
             put("fusion_inference_count", trustInferenceCount)
             put("average_trust_value", averageTrust)
             put("gated_audio_file", if (gatedWavFile?.exists() == true) "gated_microphone.wav" else JSONObject.NULL)
+            put("rnnoise_enabled", rnnoiseWavFile?.exists() == true)
+            put("rnnoise_audio_file", if (rnnoiseWavFile?.exists() == true) "microphone_rnnoise.wav" else JSONObject.NULL)
             put("manufacturer", Build.MANUFACTURER)
             put("model", Build.MODEL)
             put("android_release", Build.VERSION.RELEASE)
