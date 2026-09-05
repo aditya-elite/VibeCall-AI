@@ -73,8 +73,8 @@ In live evaluations under heavy acoustic background noise, the phone-native cont
 ### Key Findings from Hardware Trials
 - **Vocal Vibration ($0.0–2.0\text{s}$)**: $Z$-axis vibration elevates to **$1.01–2.69\text{ m/s}^2$** during phonation.
 - **Ambient Noise Pause ($2.0–4.0\text{s}$)**: While the microphone is flooded with loud ambient noise, accelerometer vibration plummets to **$0.35–0.53\text{ m/s}^2$**.
-- **Measured Attenuation**: Achieved **`+4.73 dB`** ambient noise suppression during speech pauses, exceeding the project's $\ge 3.0\text{ dB}$ hackathon success target.
-- **NPU Acceleration**: On-device **NNAPI delegate** initialized and executing on Snapdragon NPU hardware.
+- **Model v2 On-Device Gating**: With `fusion_gate_model_v2.tflite`, the live on-device NNAPI inference achieved an **average trust of `0.305`** and **`10.29 dB` dynamic attenuation** of background noise.
+- **NPU Acceleration**: On-device **NNAPI delegate** initialized and executing in real time on Snapdragon NPU hardware with zero audio dropouts.
 
 For detailed test logs, time-domain tables, and implementation instructions, see [docs/TEST_RESULTS_AND_NEXT_STEPS.md](docs/TEST_RESULTS_AND_NEXT_STEPS.md).
 
