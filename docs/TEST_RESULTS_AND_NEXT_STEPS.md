@@ -177,3 +177,29 @@ Following Model v2 validation, `fusion_gate_model_v3.tflite` was deployed to the
 - **NPU Performance**: 107 continuous inferences completed on Snapdragon NNAPI hardware delegate with zero audio latency or dropouts over a 13.62-second evaluation window.
 - **Proof Plot**: `docs/images/test_c_v3_comparison.png`.
 
+---
+
+## 9. Real-Time RNNoise Neural Denoising + NPU Fusion Hardware Trial & Validation
+
+Following the integration of C++ RNNoise with JNI bindings, resampler, and in-app A/B audition playback, the new pipeline was verified live on the Motorola edge 50 fusion (`ZA2237N7K4`).
+
+### Quantitative Hardware Results (RNNoise + NPU Multimodal Fusion)
+
+| Trial | Test Label | Avg Trust | Inferences | Attenuation / Suppression | Duration |
+| :--- | :--- | :---: | :---: | :---: | :---: |
+| **Test C (RNNoise + NPU)** | `Cheek - speaking with background noise` | **`0.1363`** | 88 | **`14.14 dB` live attenuation** (up to **`-24.4 dB`** in noise pauses) | 11.14 s |
+
+- **Empirical Measured Result**: **`0.1363`** average trust across 88 NPU NNAPI inferences.
+- **Audio Power Levels**:
+  - Raw Microphone: $\text{RMS} = 783.21$
+  - On-Device NPU Gated Microphone: $\text{RMS} = 153.73$
+  - **Dynamic Level Reduction**: $\mathbf{14.14\text{ dB}}$ overall, achieving **$19.1–24.4\text{ dB}$ suppression** during non-speech noise periods while preserving full vocal clarity.
+  - RNNoise Neural Denoised: $\text{RMS} = 656.58$ (preserves vocal resonance at $-0.8\text{ dB}$ during speech while zeroing stationary acoustic noise floor by up to $-22.0\text{ dB}$).
+- **IMU High-Speed Rate**: 4,488 accelerometer samples captured at **`401.48 Hz`** (TDK-Invensense ICM-4x6xx).
+- **Dual Neural Pipeline Running On-Device**:
+  1. **Snapdragon NNAPI Delegate**: Executes `fusion_gate_model.tflite` evaluating synchronized acoustic-IMU windows in real time.
+  2. **Recurrent Neural Network (RNNoise)**: Embedded C++ RNN running per-frame feature extraction, band gains calculation, and neural noise subtraction on Android with zero audio dropouts.
+  3. **Interactive In-App A/B Audition**: Allows instant post-recording toggle between Raw, NPU Gated, and RNNoise audio directly on the smartphone.
+- **Proof Plot**: `docs/images/test_c_rnnoise_comparison.png`.
+
+

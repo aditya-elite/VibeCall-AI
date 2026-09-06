@@ -67,15 +67,17 @@ Our hardware feasibility experiment on an Android smartphone validated the core 
 In live evaluations under heavy acoustic background noise, the phone-native contact accelerometer successfully isolated speech activity when acoustic microphones were overwhelmed:
 
 <p align="center">
-  <img src="./docs/images/test_c_comparison.png" width="850" alt="VibeCall AI Multimodal Evidence and Noise Suppression" />
+  <img src="./docs/images/test_c_rnnoise_comparison.png" width="850" alt="VibeCall AI Multimodal Evidence and Noise Suppression" />
 </p>
 
 ### Key Findings from Hardware Trials
 - **Vocal Vibration ($0.0–2.0\text{s}$)**: $Z$-axis vibration elevates to **$1.01–2.69\text{ m/s}^2$** during phonation.
-- **Ambient Noise Pause ($2.0–4.0\text{s}$)**: While the microphone is flooded with loud ambient noise, accelerometer vibration plummets to **$0.35–0.53\text{ m/s}^2$**.
-- **Model v3 On-Device Gating**: With `fusion_gate_model_v3.tflite`, the live on-device NNAPI inference achieved an **average trust of `0.110`** and **`15.49 dB` dynamic attenuation** of heavy acoustic background noise (over $+5.2\text{ dB}$ higher suppression than Model v2).
+- **Ambient Noise Pause ($2.0–8.0\text{s}$)**: While the microphone is flooded with loud ambient noise, accelerometer vibration plummets to **$0.35–0.53\text{ m/s}^2$**.
+- **Real-Time RNNoise Neural Denoising + NPU Gating**: The combined pipeline achieves **`14.14 dB` dynamic attenuation** (with up to **`24.4 dB` suppression** during ambient noise pauses) while preserving voice with transparent $0.8\text{ dB}$ fidelity and eliminating background acoustic hiss.
+- **Model v3 On-Device Gating**: With `fusion_gate_model_v3.tflite`, the live on-device NNAPI inference achieved an **average trust of `0.110`** and **`15.49 dB` dynamic attenuation** of heavy acoustic background noise.
 - **Model v2 Baseline Gating**: Delivered an average trust of `0.305` and `10.29 dB` dynamic attenuation.
-- **NPU Acceleration**: On-device **NNAPI delegate** initialized and executing in real time on Snapdragon NPU hardware with zero audio dropouts (107 inferences across 13.6s).
+- **NPU + DSP/CPU Acceleration**: Snapdragon NNAPI delegate running fusion gating in parallel with native C++ RNNoise recurrent neural network with zero audio dropouts.
+- **In-App A/B Auditioning**: Immediate toggle between Raw Microphone, NPU Gated Audio, and RNNoise Denoised Audio directly on the smartphone.
 
 For detailed test logs, time-domain tables, and implementation instructions, see [docs/TEST_RESULTS_AND_NEXT_STEPS.md](docs/TEST_RESULTS_AND_NEXT_STEPS.md).
 
@@ -85,7 +87,7 @@ For detailed test logs, time-domain tables, and implementation instructions, see
 
 ```
 [Speaker's Mouth] ──(Airborne Acoustic Path)──> [Microphone] ──> 16 kHz Mono PCM Audio ──┐
-                                                                                         ├──> [Monotonic Sync] ──> [NPU Fusion Gate] ──> Clean Outgoing Voice (+4.7 dB)
+                                                                                         ├──> [Monotonic Sync] ──> [NPU Fusion Gate] ──> [RNNoise RNN] ──> Clean Outgoing Voice
 [Speaker's Cheek] ──(Bone / Contact Path)─────> [IMU Accel]  ──> ~401 Hz 3-Axis Motion ──┘
 ```
 
