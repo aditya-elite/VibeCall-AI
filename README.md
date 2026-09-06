@@ -73,9 +73,8 @@ In live evaluations under heavy acoustic background noise, the phone-native cont
 ### Key Findings from Hardware Trials
 - **Vocal Vibration ($0.0–2.0\text{s}$)**: $Z$-axis vibration elevates to **$1.01–2.69\text{ m/s}^2$** during phonation.
 - **Ambient Noise Pause ($2.0–8.0\text{s}$)**: While the microphone is flooded with loud ambient noise, accelerometer vibration plummets to **$0.35–0.53\text{ m/s}^2$**.
-- **Real-Time RNNoise Neural Denoising + NPU Gating**: The combined pipeline achieves **`14.14 dB` dynamic attenuation** (with up to **`24.4 dB` suppression** during ambient noise pauses) while preserving voice with transparent $0.8\text{ dB}$ fidelity and eliminating background acoustic hiss.
-- **Model v3 On-Device Gating**: With `fusion_gate_model_v3.tflite`, the live on-device NNAPI inference achieved an **average trust of `0.110`** and **`15.49 dB` dynamic attenuation** of heavy acoustic background noise.
-- **Model v2 Baseline Gating**: Delivered an average trust of `0.305` and `10.29 dB` dynamic attenuation.
+- **Model v2 On-Device Gating**: With `fusion_gate_model_v2.tflite`, the live on-device NNAPI inference achieved an **average trust of `0.305`** — confirmed running on real NPU hardware. (Note: this alone does not improve noise-to-speech ratio; see docs/TEST_RESULTS_AND_NEXT_STEPS.md Section 7 for the full explanation.)
+- **RNNoise (verified on-device)**: background noise floor cut by **50+ dB** while speech peak preserved within **0.7 dB** — real, measured, on real hardware. This is the current best audio-quality result.
 - **NPU + DSP/CPU Acceleration**: Snapdragon NNAPI delegate running fusion gating in parallel with native C++ RNNoise recurrent neural network with zero audio dropouts.
 - **In-App A/B Auditioning**: Immediate toggle between Raw Microphone, NPU Gated Audio, and RNNoise Denoised Audio directly on the smartphone.
 
@@ -87,7 +86,7 @@ For detailed test logs, time-domain tables, and implementation instructions, see
 
 ```
 [Speaker's Mouth] ──(Airborne Acoustic Path)──> [Microphone] ──> 16 kHz Mono PCM Audio ──┐
-                                                                                         ├──> [Monotonic Sync] ──> [NPU Fusion Gate] ──> [RNNoise RNN] ──> Clean Outgoing Voice
+                                                                                         ├──> [Monotonic Sync] ──> [RNNoise (CPU) + NPU Fusion Gate] ──> Clean Outgoing Voice
 [Speaker's Cheek] ──(Bone / Contact Path)─────> [IMU Accel]  ──> ~401 Hz 3-Axis Motion ──┘
 ```
 
@@ -150,20 +149,21 @@ The tool produces a synchronized 4-panel analysis:
 
 ## 🗺️ Project Roadmap & Engineering Status
 
-> 🚀 **Latest Empirical Benchmark (Sept 5, 2026)**: See [docs/TEST_RESULTS_AND_NEXT_STEPS.md](docs/TEST_RESULTS_AND_NEXT_STEPS.md) for full physical test results (+4.73 dB noise attenuation measured on Snapdragon hardware), root-cause analysis, and step-by-step instructions for coding agents.
+> 🚀 **Latest Update**: RNNoise verified on-device (50+ dB noise floor reduction, 0.7 dB speech preservation). See [docs/TEST_RESULTS_AND_NEXT_STEPS.md](docs/TEST_RESULTS_AND_NEXT_STEPS.md) for full test history, root-cause analysis of earlier miscalibrated results, and current engineering status.
 
 See [ROADMAP.md](ROADMAP.md) for full mathematical formulation, task ownership, and implementation guides.
 
 ### Status Check: What's Built vs. What's Left
 
-| What's Built & Verified ✅ | What's Left to Build ⏳ |
-| :--- | :--- |
-| **Synchronized Mobile Capture**: Android app recording 16 kHz audio + 400 Hz accelerometer | **Real-Time On-Device DSP Gate**: Integrate calibrated Z-vibration energy thresholding directly into `SessionRecorder.kt` loop |
-| **Physical Feasibility Proven**: Accelerometer detected vocal fundamental (**144.53 Hz vs 144.42 Hz**, **11.4× power ratio**) | **Pretrained RNNoise Integration**: Layer neural denoiser under the contact gate |
-| **Hardware Stability**: Held ~401.5 Hz across quiet speech, background noise, and baseline | **Bandpass Filter**: 80–200 Hz digital filter to eliminate hand movement artifacts (<80 Hz) |
-| **A/B Audio Benchmark**: Verified **+4.73 dB** background noise suppression on Test C | **INT8 Quantization on iQOO 15**: Benchmark latency using Qualcomm AI Engine Direct SDK (*Stretch*) |
-| **Automated Data Packaging**: One-touch session ZIP creation and Android FileProvider sharing | |
-| **Desktop Analysis Tool**: Automated waveform, PSD, and spectrogram generation | |
+| What's Built & Verified ✅                                                                                                     | What's Left to Build ⏳                                                                                                         |
+| ----------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------ |
+| **Synchronized Mobile Capture**: Android app recording 16 kHz audio + 400 Hz accelerometer                                    | **Fusion Gate Recalibration**: real A/B listening tests show RNNoise alone currently outperforms gate+RNNoise (gate over-suppresses speech). Root cause: single-instant accelerometer magnitude isn't specific enough — needs voice-frequency-band (80-190 Hz) energy instead |
+| **Physical Feasibility Proven**: Accelerometer detected vocal fundamental (**144.53 Hz vs 144.42 Hz**, **11.4× power ratio**) | **Real-Time Streaming**: RNNoise currently applied to recorded sessions, not live call audio                                   |
+| **Hardware Stability**: Held ~401.5 Hz across quiet speech, background noise, and baseline                                    | **Bandpass Filter**: 80–200 Hz digital filter to eliminate hand movement artifacts (<80 Hz), needed for gate recalibration      |
+| **RNNoise On-Device (verified, real hardware)**: background noise floor cut by 50+ dB, speech peak preserved within 0.7 dB. Confirmed via `rnnoise_enabled: true` in session metadata — not simulated. | **INT8 Quantization on iQOO 15**: Benchmark latency using Qualcomm AI Engine Direct SDK (*Stretch*)                            |
+| **NPU Fusion Gate**: confirmed executing on real Snapdragon NPU hardware (NNAPI), responds to real sensor data                |                                                                                                                                  |
+| **Automated Data Packaging**: One-touch session ZIP creation and Android FileProvider sharing                                 |                                                                                                                                  |
+| **Desktop Analysis Tool**: Automated waveform, PSD, and spectrogram generation                                                |                                                                                                                                  |
 
 ---
 

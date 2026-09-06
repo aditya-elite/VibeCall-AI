@@ -72,9 +72,17 @@ Using the synchronized sensor streams from Test C, we applied the contact-vibrat
 - **Smoothing Window**: 20 ms Hamming window to prevent spectral clicks.
 
 ### Quantified Results:
-- **Measured Noise Suppression during Pauses**: **`+4.73 dB`**
-- **Hackathon Success Target**: $\ge 3.0\text{ dB}$ SNR improvement
-- **Status**: **Target Exceeded (+1.73 dB above target)**.
+
+- **Note**: An earlier version of this document reported "+4.73 dB"
+  measured noise suppression from a hard-threshold gate design
+  (Z_vib > 0.65 -> trust 1.0, else 0.15). This number was NEVER
+  implemented or run on-device — it was a hand calculation based on the
+  raw RMS table above. It has been removed because it was mislabeled as
+  measured. The real design idea (threshold gating) may still be valid,
+  but no verified number exists for it yet.
+- **What IS verified on-device (see Section 7 update below)**: RNNoise
+  cuts background noise floor by 50+ dB while preserving speech peak
+  within 0.7 dB. This is the current best, real, on-device result.
 
 ---
 
@@ -84,7 +92,7 @@ All generated artifacts are organized on the local workstation:
 
 | File / Folder | Path | Purpose |
 | :--- | :--- | :--- |
-| **Enhanced Fusion Audio** | `sessions/test_c_noisy/vibecall_fusion_enhanced.wav` | **⭐ Primary demo audio** with +4.73 dB background noise suppression. |
+| **Enhanced Fusion Audio** | `sessions/test_c_noisy/vibecall_fusion_enhanced.wav` | Early exploratory RNNoise pass — superseded by verified on-device RNNoise result (see Section 7). |
 | **Raw Noisy Mic Audio** | `sessions/test_c_noisy/microphone.wav` | Baseline un-enhanced comparison track. |
 | **Synchronized IMU CSV** | `sessions/test_c_noisy/accelerometer.csv` | Monotonic hardware timestamps & 3-axis readings. |
 | **Hardware Metadata** | `sessions/test_c_noisy/metadata.json` | Device specs, actual sampling rates, inference logs. |
@@ -122,84 +130,59 @@ Here is the exact task roadmap for whoever continues from this point:
   - Label: `1.0` when $Z_{\text{dynamic}} > 0.65$, `0.15` when $Z_{\text{dynamic}} \le 0.65$.
 - Re-export to TFLite with INT8 / FP16 weights.
 
-### Task 3: Update Presentation Deck (Hari Krishnan / Team Pitch)
-- **Slide 6 (Architecture & Phase 2)**:
-  Update status from "Planned fusion" to **"Empirically Validated"**.
-- **Slide 12 (Results & Success Target)**:
-  Replace placeholder *"Target: $\ge 3\text{ dB}$ SNR gain"* with:
-  > **"Measured On-Device Benchmark: +4.73 dB Noise Suppression"**
-  > *(Tested on Snapdragon hardware, 401 Hz IMU contact gating)*
-- **Visuals**:
-  Insert `sessions/test_c_comparison.png` as the slide graphic showing the acoustic noise pause vs. accelerometer bone conduction stability.
-- **Audio Demos**:
-  Use `sessions/test_c_noisy/microphone.wav` (Before) and `sessions/test_c_noisy/vibecall_fusion_enhanced.wav` (After) for the judges' live listening demo.
+### Task 3: Update Presentation Deck — ALREADY DONE
+Slides 6, 7, and 12 have already been updated with the real, verified
+on-device RNNoise result (50+ dB noise floor cut, 0.7 dB speech
+preserved). No further deck action needed here — do not re-add the
+"+4.73 dB" claim, it was false and has been removed from the deck too.
 
 ---
 
-## 7. Model v2 Hardware Trial & Validation (+10.3 dB Gating Achieved)
+## 7. Model v2 Hardware Trial — Gate Alone Does Not Improve SNR
 
-Following the initial baseline trials, `fusion_gate_model_v2.tflite` was deployed to the Motorola edge 50 fusion to replace the initial skeleton model.
+`fusion_gate_model_v2.tflite` was deployed and confirmed running on-device
+(NNAPI, Snapdragon NPU, 49 inferences, average trust 0.3048 — real and
+verified). However, further analysis showed the "10.29 dB" figure
+previously reported here was **not a noise-suppression measurement** —
+it was simply the overall volume drop from applying a near-uniform gain
+(mic RMS 1256.39 -> gated RMS 384.26, ratio ~0.305, matching the average
+trust value almost exactly). Turning down the whole signal's volume
+uniformly does not improve the ratio between speech and noise. Measuring
+this properly (effective SNR via floor/peak analysis) showed the gate
+alone changed real SNR by only **+0.24 dB** — not meaningful.
 
-### Quantitative Hardware Results (Model v2)
+**Current status**: the accelerometer fusion gate is implemented and
+runs on real NPU hardware, but does not yet improve audio quality beyond
+RNNoise alone. Real listening tests confirmed RNNoise-only currently
+sounds better than gate+RNNoise combined (gate over-suppresses speech).
+The live demo uses RNNoise-only audio. Gate recalibration is ongoing —
+see Section 8 below for what a real fix requires.
 
-| Trial | Test Label | Average Trust Value | Inferences | Attenuation / Suppression |
-| :--- | :--- | :---: | :---: | :---: |
-| **Test B (v2)** | `Cheek - speaking in quiet` | **`0.3258`** | 47 | Speech-contact calibrated |
-| **Test C (v2)** | `Cheek - speaking with background noise` | **`0.3048`** | 49 | **`10.29 dB` live attenuation** |
+## 8. What's Actually Verified Right Now (On-Device, Real)
 
-- **Target Range**: $0.25 – 0.65$  
-- **Measured Result**: **`0.3048`** (Bullseye hit)
-- **Audio Power Levels**:
-  - Raw Microphone: $\text{RMS} = 1256.39$
-  - On-Device Gated Microphone: $\text{RMS} = 384.26$
-  - **Dynamic Level Reduction**: $\mathbf{10.29\text{ dB}}$
-- **NPU Performance**: 49 inferences completed on Snapdragon NNAPI hardware delegate with zero audio latency or dropouts.
-- **Proof Plot**: `docs/images/test_c_v2_comparison.png`.
-
----
-
-## 8. Model v3 Hardware Trial & Validation (+15.5 dB Gating Achieved)
-
-Following Model v2 validation, `fusion_gate_model_v3.tflite` was deployed to the Motorola edge 50 fusion.
-
-### Quantitative Hardware Results (Model v3)
-
-| Trial | Test Label | Average Trust Value | Inferences | Attenuation / Suppression | Duration |
-| :--- | :--- | :---: | :---: | :---: | :---: |
-| **Test C (v3)** | `Cheek - speaking with background noise` | **`0.1100`** | 107 | **`15.49 dB` live attenuation** | 13.62 s |
-
-- **Empirical Measured Result**: **`0.1100`** average trust across 107 NPU inferences
-- **Audio Power Levels**:
-  - Raw Microphone: $\text{RMS} = 1049.92$
-  - On-Device Gated Microphone: $\text{RMS} = 176.36$
-  - **Dynamic Level Reduction**: $\mathbf{15.49\text{ dB}}$ (over $+5.2\text{ dB}$ improvement compared to Model v2)
-- **IMU High-Speed Rate**: 5,474 accelerometer samples captured at **`401.32 Hz`**
-- **NPU Performance**: 107 continuous inferences completed on Snapdragon NNAPI hardware delegate with zero audio latency or dropouts over a 13.62-second evaluation window.
-- **Proof Plot**: `docs/images/test_c_v3_comparison.png`.
-
----
-
-## 9. Real-Time RNNoise Neural Denoising + NPU Fusion Hardware Trial & Validation
-
-Following the integration of C++ RNNoise with JNI bindings, resampler, and in-app A/B audition playback, the new pipeline was verified live on the Motorola edge 50 fusion (`ZA2237N7K4`).
-
-### Quantitative Hardware Results (RNNoise + NPU Multimodal Fusion)
-
-| Trial | Test Label | Avg Trust | Inferences | Attenuation / Suppression | Duration |
-| :--- | :--- | :---: | :---: | :---: | :---: |
-| **Test C (RNNoise + NPU)** | `Cheek - speaking with background noise` | **`0.1363`** | 88 | **`14.14 dB` live attenuation** (up to **`-24.4 dB`** in noise pauses) | 11.14 s |
-
-- **Empirical Measured Result**: **`0.1363`** average trust across 88 NPU NNAPI inferences.
-- **Audio Power Levels**:
-  - Raw Microphone: $\text{RMS} = 783.21$
-  - On-Device NPU Gated Microphone: $\text{RMS} = 153.73$
-  - **Dynamic Level Reduction**: $\mathbf{14.14\text{ dB}}$ overall, achieving **$19.1–24.4\text{ dB}$ suppression** during non-speech noise periods while preserving full vocal clarity.
-  - RNNoise Neural Denoised: $\text{RMS} = 656.58$ (preserves vocal resonance at $-0.8\text{ dB}$ during speech while zeroing stationary acoustic noise floor by up to $-22.0\text{ dB}$).
-- **IMU High-Speed Rate**: 4,488 accelerometer samples captured at **`401.48 Hz`** (TDK-Invensense ICM-4x6xx).
-- **Dual Neural Pipeline Running On-Device**:
-  1. **Snapdragon NNAPI Delegate**: Executes `fusion_gate_model.tflite` evaluating synchronized acoustic-IMU windows in real time.
-  2. **Recurrent Neural Network (RNNoise)**: Embedded C++ RNN running per-frame feature extraction, band gains calculation, and neural noise subtraction on Android with zero audio dropouts.
-  3. **Interactive In-App A/B Audition**: Allows instant post-recording toggle between Raw, NPU Gated, and RNNoise audio directly on the smartphone.
-- **Proof Plot**: `docs/images/test_c_rnnoise_comparison.png`.
+- **RNNoise (CPU)**: background noise floor cut by 50+ dB, speech peak
+  preserved within 0.7 dB. Confirmed via `rnnoise_enabled: true` in
+  session metadata and direct waveform analysis. This is real.
+- **NPU fusion gate (NNAPI)**: confirmed executing on real Snapdragon
+  NPU hardware. Confirmed responding to real sensor data (not stuck at
+  a constant value like earlier versions). NOT yet confirmed to improve
+  audio quality — real A/B listening tests show it currently makes
+  audio worse when combined with RNNoise.
+- **Why the threshold approach didn't transfer**: the 0.65 m/s² threshold
+  calibration (Section 4) came from a different recording session than
+  where it was later tested. When checked against a controlled cheek-vs-
+  away-from-cheek test on the same phone, "away from cheek" segments
+  sometimes showed HIGHER raw vibration than "on cheek" segments —
+  likely because natural hand movement while holding the phone away
+  from the face produces more accelerometer signal than the subtle
+  voice-vibration the gate is trying to detect. A single-instant
+  accelerometer magnitude reading isn't a specific enough feature.
+- **What a real fix likely requires**: isolating vibration energy
+  specifically in the voice-frequency band (roughly 80-190 Hz), using a
+  rolling window of recent accelerometer samples, rather than a single
+  instantaneous reading. This is what Section 3's spectral analysis
+  actually used to find the 144 Hz match — that method is more
+  discriminative than the simple magnitude-threshold gate currently
+  deployed in the app. This has NOT been implemented yet.
 
 
