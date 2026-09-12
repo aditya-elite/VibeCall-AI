@@ -43,12 +43,23 @@ data class SessionResult(
     val audioSamples: Long,
     val measuredSensorRateHz: Double,
     val averageTrustValue: Double = 1.0,
-    val rnnoiseWavFile: File? = null
+    val rnnoiseWavFile: File? = null,
+    val featuresFile: File? = null
+)
+
+data class TelemetryData(
+    val measuredRateHz: Double,
+    val sampleCount: Long,
+    val vibrationRms: Double = 0.0,
+    val motionLevel: Double = 0.0,
+    val sensorReliability: Double = 1.0,
+    val rollingSampleCount: Int = 0
 )
 
 class SessionRecorder(
     private val context: Context,
-    private val onRateUpdate: (Double, Long) -> Unit
+    private val onRateUpdate: (Double, Long) -> Unit = { _, _ -> },
+    private val onTelemetryUpdate: ((TelemetryData) -> Unit)? = null
 ) : SensorEventListener {
 
     companion object {
@@ -84,7 +95,7 @@ class SessionRecorder(
     private val audioSamples = AtomicLong(0)
     private var audioReadError: String? = null
 
-    // NPU Fusion Gate Model integration
+    // NPU Fusion Gate Model integration (kept for comparison only)
     private var fusionGateModel: FusionGateModel? = null
     private var gatedPcmFile: File? = null
     private var gatedWavFile: File? = null
@@ -104,6 +115,15 @@ class SessionRecorder(
     private var rnnoisePcmFile: File? = null
     private var rnnoiseWavFile: File? = null
 
+    // Step 3: Rolling Accelerometer Buffer & Feature Extraction
+    private val filterBank = AccelFilterBank(400.0)
+    private val rollingAccelBuffer = RollingAccelBuffer(100_000_000L) // 100 ms
+    private val featureExtractor = FeatureExtractor()
+    private var featuresFile: File? = null
+    private var featuresWriter: BufferedWriter? = null
+    @Volatile
+    private var latestWindowFeatures: WindowFeatures? = null
+
     val isRecording: Boolean
         get() = recording
 
@@ -112,6 +132,12 @@ class SessionRecorder(
 
     val latestRnnoiseWav: File?
         get() = rnnoiseWavFile
+
+    val latestFeaturesFile: File?
+        get() = featuresFile
+
+    val currentFeatures: WindowFeatures?
+        get() = latestWindowFeatures
 
     val latestRawWav: File?
         get() = wavFile
@@ -143,6 +169,19 @@ class SessionRecorder(
             64 * 1024
         ).apply {
             write("sensor_timestamp_ns,relative_to_audio_start_ns,x_m_s2,y_m_s2,z_m_s2,accuracy\n")
+        }
+
+        filterBank.reset()
+        rollingAccelBuffer.clear()
+        latestWindowFeatures = null
+        val featFile = File(directory, "features.csv")
+        featuresFile = featFile
+        featuresWriter = BufferedWriter(
+            OutputStreamWriter(FileOutputStream(featFile), Charsets.UTF_8),
+            64 * 1024
+        ).apply {
+            write(WindowFeatures.CSV_HEADER)
+            newLine()
         }
 
         sensorSamples.set(0)
@@ -265,6 +304,9 @@ class SessionRecorder(
                 fusionGateModel = null
                 rnnoiseProcessor?.close()
                 rnnoiseProcessor = null
+                featuresWriter?.flush()
+                featuresWriter?.close()
+                featuresWriter = null
 
                 val directory = sessionDirectory ?: error("Missing session directory")
                 val measuredRate = measuredSensorRateHz()
@@ -279,7 +321,8 @@ class SessionRecorder(
                     audioSamples = audioSamples.get(),
                     measuredSensorRateHz = measuredRate,
                     averageTrustValue = avgTrust,
-                    rnnoiseWavFile = rnnoiseWav
+                    rnnoiseWavFile = rnnoiseWav,
+                    featuresFile = featuresFile
                 )
             }
             onComplete(result)
@@ -288,6 +331,23 @@ class SessionRecorder(
 
     override fun onSensorChanged(event: SensorEvent) {
         if (!recording || event.sensor.type != Sensor.TYPE_ACCELEROMETER) return
+
+        // 1. Process sample through stateful filters exactly once as it arrives
+        val filtered = filterBank.process(event.values[0], event.values[1], event.values[2])
+        rollingAccelBuffer.add(
+            FilteredAccelSample(
+                timestampNs = event.timestamp,
+                rawX = filtered.rawX,
+                rawY = filtered.rawY,
+                rawZ = filtered.rawZ,
+                lowX = filtered.lowX,
+                lowY = filtered.lowY,
+                lowZ = filtered.lowZ,
+                bpX = filtered.bpX,
+                bpY = filtered.bpY,
+                bpZ = filtered.bpZ
+            )
+        )
 
         latestAccelX = event.values[0]
         latestAccelY = event.values[1]
@@ -312,8 +372,20 @@ class SessionRecorder(
             newLine()
         }
 
-        if (count % 100L == 0L) {
-            onRateUpdate(measuredSensorRateHz(), count)
+        if (count % 40L == 0L) { // update telemetry every ~100 ms
+            val rate = measuredSensorRateHz()
+            onRateUpdate(rate, count)
+            val feat = latestWindowFeatures
+            onTelemetryUpdate?.invoke(
+                TelemetryData(
+                    measuredRateHz = rate,
+                    sampleCount = count,
+                    vibrationRms = feat?.accelerometerBandRms ?: 0.0,
+                    motionLevel = feat?.phoneMotionLevel ?: 0.0,
+                    sensorReliability = feat?.sensorReliability ?: 1.0,
+                    rollingSampleCount = rollingAccelBuffer.size()
+                )
+            )
         }
     }
 
@@ -385,10 +457,11 @@ class SessionRecorder(
                             read > 0 -> {
                                 // 1. Preserve original microphone PCM capture unchanged
                                 output.write(buffer, 0, read)
-                                audioSamples.addAndGet((read / 2).toLong())
-
-                                // 2. Convert buffer bytes to ShortArray for variance, gating, and denoising
                                 val numSamples = read / 2
+                                val currentAudioSampleIndex = audioSamples.get()
+                                audioSamples.addAndGet(numSamples.toLong())
+
+                                // 2. Convert buffer bytes to ShortArray for variance, gating, denoising, and features
                                 val shortSamples = ShortArray(numSamples)
                                 var sum = 0.0
                                 var sumSq = 0.0
@@ -404,7 +477,25 @@ class SessionRecorder(
                                 val mean = sum / numSamples
                                 val variance = max(0.0, (sumSq / numSamples) - (mean * mean)).toFloat()
 
-                                // 3. Run NPU fusion gate model with audioVariance & accelerometer readings
+                                // 3. Audio-relative feature extraction for features.csv
+                                val audioRelTimeMs = (currentAudioSampleIndex.toDouble() * 1000.0) / AUDIO_SAMPLE_RATE.toDouble()
+                                val accelSnapshot = rollingAccelBuffer.getSnapshot()
+                                val windowFeatures = featureExtractor.extractFeatures(
+                                    audioSamples = shortSamples,
+                                    numAudioSamples = numSamples,
+                                    audioRelativeTimeMs = audioRelTimeMs,
+                                    accelWindow = accelSnapshot,
+                                    isFilterWarmedUp = filterBank.isWarmedUp
+                                )
+                                latestWindowFeatures = windowFeatures
+
+                                // Write to features.csv (buffered, non-blocking)
+                                featuresWriter?.apply {
+                                    write(windowFeatures.toCsvRow())
+                                    newLine()
+                                }
+
+                                // 4. Run NPU fusion gate model (kept for comparison only)
                                 val trust = fusionGateModel?.getTrustValue(
                                     audioVariance = variance,
                                     accelX = latestAccelX,
@@ -519,6 +610,9 @@ class SessionRecorder(
             put("gated_audio_file", if (gatedWavFile?.exists() == true) "gated_microphone.wav" else JSONObject.NULL)
             put("rnnoise_enabled", rnnoiseWavFile?.exists() == true)
             put("rnnoise_audio_file", if (rnnoiseWavFile?.exists() == true) "microphone_rnnoise.wav" else JSONObject.NULL)
+            put("features_file", if (featuresFile?.exists() == true) "features.csv" else JSONObject.NULL)
+            put("feature_rolling_window_ms", 100)
+            put("feature_bandpass_hz", "80-185")
             put("manufacturer", Build.MANUFACTURER)
             put("model", Build.MODEL)
             put("android_release", Build.VERSION.RELEASE)

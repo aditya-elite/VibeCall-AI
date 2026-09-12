@@ -113,6 +113,7 @@ The mobile companion application captures synchronized test sessions with a sing
   * `microphone_rnnoise.wav` (RNNoise-denoised, on-device — this is the demo audio)
   * `gated_microphone.wav` (NPU fusion gate output, for evaluation)
   * `accelerometer.csv` (Monotonic hardware timestamps and 3-axis readings)
+  * `features.csv` (Step 3: Rolling 100ms 80-185Hz vocal vibration, 5Hz motion level, audio RMS, and reliability metrics)
   * `metadata.json` (Device model, sampling rates, inference counters)
 - **Direct Share**: Built-in Android `FileProvider` export for one-tap sharing.
 

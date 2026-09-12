@@ -9,15 +9,39 @@ import java.util.ArrayList
  * Our phone recording is 16 kHz, so audio is upsampled before RNNoise
  * and downsampled after.
  */
-class RnnoiseProcessor : AutoCloseable {
+fun interface RnnoiseNativeAdapter : AutoCloseable {
+    fun processFrame(inFrame48k: FloatArray, outFrame48k: FloatArray)
+    override fun close() = Unit
+}
+
+/**
+ * Wraps RNNoise for real-time denoising. RNNoise requires 48 kHz audio,
+ * processed in fixed 10 ms frames (480 samples per frame).
+ * Our phone recording is 16 kHz, so audio is upsampled before RNNoise
+ * and downsampled after.
+ */
+class RnnoiseProcessor(
+    customAdapter: RnnoiseNativeAdapter? = null
+) : AutoCloseable {
 
     companion object {
         const val FRAME_SIZE_48K = 480
         const val FRAME_SIZE_16K = 160
     }
 
-    private val rnnoise = createRnnoise()
-    val frameSize: Int = rnnoise.frameSize
+    private val rnnoise: RnnoiseNativeAdapter = customAdapter ?: run {
+        val native = createRnnoise()
+        object : RnnoiseNativeAdapter {
+            override fun processFrame(inFrame48k: FloatArray, outFrame48k: FloatArray) {
+                native.processFrame(inFrame48k, outFrame48k)
+            }
+            override fun close() {
+                native.close()
+            }
+        }
+    }
+
+    val frameSize: Int = FRAME_SIZE_48K
 
     // Temporary reusable buffers to minimize GC allocations during streaming
     private val inFrame48k = FloatArray(FRAME_SIZE_48K)
@@ -35,7 +59,9 @@ class RnnoiseProcessor : AutoCloseable {
         require(frame48k.size == FRAME_SIZE_48K) {
             "RNNoise requires exactly $FRAME_SIZE_48K samples (10ms @ 48kHz)"
         }
-        return rnnoise.processFrame(frame48k)
+        val out = FloatArray(FRAME_SIZE_48K)
+        rnnoise.processFrame(frame48k, out)
+        return out
     }
 
     /**

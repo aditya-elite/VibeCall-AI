@@ -206,9 +206,56 @@ val energyTrust = if (accelDynamicZ > 0.65f) 1.0f else 0.15f
 
 The presentation deck has already been updated with the real RNNoise result from Section 5. Do not add "+4.73 dB" or "10.29 dB" to any slide — both were shown above to be invalid (Section 2 and Section 4).
 
-### Task 4: If pursuing the frequency-band fix (Section 6)
+### Task 4: Frequency-Band Fix & Feature Extraction (Implemented in Step 3)
 
-1. Implement an 80-190 Hz bandpass filter on the accelerometer Z-axis, applied to a rolling window of recent samples (not single-instant readings).
-2. Retrain the fusion gate model on this new feature, using real calibration data from the actual device the fusion gate will be demoed on.
-3. Verify via real listening A/B test (not just checking the trust value looks reasonable) before claiming any improvement.
-4. Only update deck/README claims after a real listening-verified result exists.
+Step 3 implements single-pass continuous digital filtering, a 100 ms rolling buffer, and synchronized multi-modal feature logging to `features.csv` without modifying audio fusion gain. See Section 10 below for full details.
+
+---
+
+## 10. Step 3 Implementation: Digital Filtering, Rolling Buffer & Feature Extraction Pipeline
+
+### Architecture & Filter Design
+1. **Single-Pass Digital Filtering (`AccelFilterBank.kt`)**:
+   - Each raw $(x, y, z)$ sample from the accelerometer is processed through stateful digital filters *exactly once* upon arrival in `onSensorChanged`.
+   - **Vocal Vibration Path**: 4th-order cascaded Butterworth bandpass filter ($f_{\text{hp}} = 80.0\text{ Hz}$, $f_{\text{lp}} = 185.0\text{ Hz}$ at $f_s \approx 400\text{ Hz}$). Tested and verified in unit tests:
+     - $140\text{ Hz}$ synthetic vocal fundamental: passes cleanly with measured gain $> 0.85$ (theoretical $0.989$).
+     - $10\text{ Hz}$ hand-movement: strongly rejected with $> 26\text{ dB}$ attenuation (measured gain $< 0.05$).
+     - $5\text{ Hz}$ drift ($< 0.02$) and $195\text{ Hz}$ near Nyquist ($< 0.20$) attenuated.
+   - **Low-Frequency Motion & Gravity Path**: 2nd-order Butterworth low-pass filter ($f_c = 5.0\text{ Hz}$) extracts slow hand movement and the static 1G gravity vector.
+2. **Rolling Accelerometer Buffer (`RollingAccelBuffer.kt`)**:
+   - Thread-safe sliding window retaining the last $100\text{ ms}$ of timestamped filtered samples ($\approx 40$ samples at $400\text{ Hz}$).
+   - Samples older than $100\text{ ms}$ are automatically evicted.
+3. **Audio-Relative Synchronization**:
+   - Each row in `features.csv` is aligned with the exact audio sample position:
+     $$\text{audio\_rel\_time\_ms} = \frac{\text{sample\_index} \times 1000}{\text{AUDIO\_SAMPLE\_RATE}}$$
+
+### Feature Definitions (`features.csv`)
+Exported in every session `.zip` with the following columns:
+
+| Column | Unit | Description |
+| :--- | :--- | :--- |
+| `audio_relative_time_ms` | ms | Timestamp relative to the start of audio recording. |
+| `microphone_rms` | normalized [0, 1] | Root-mean-square amplitude of microphone samples in the window. |
+| `microphone_log_energy_db` | dB | Logarithmic audio energy: $20 \log_{10}(\text{RMS} + 10^{-6})$. |
+| `accelerometer_band_energy` | $\text{m}^2/\text{s}^4$ | Mean squared magnitude of $80\text{--}185\text{ Hz}$ bandpass vibration: $\frac{1}{M}\sum (x_{\text{bp}}^2 + y_{\text{bp}}^2 + z_{\text{bp}}^2)$. |
+| `accelerometer_band_rms` | $\text{m/s}^2$ | $\sqrt{\text{accelerometer\_band\_energy}}$. |
+| `phone_motion_level` | $\text{m/s}^2$ | Standard deviation of low-pass filtered acceleration magnitude $\sigma(\|a_{\text{low}}\|)$ over 100 ms. Measures gross hand/phone movement. |
+| `sensor_sample_count` | integer | Number of accelerometer samples $M$ in the 100 ms rolling buffer (nominal $\approx 40$). |
+| `sensor_rate_hz` | Hz | Measured instantaneous accelerometer rate: $(M - 1) / \Delta t_{\text{window}}$. |
+| `sensor_reliability` | [0.0, 1.0] | Quality score reflecting sensor health: penalized during filter warmup (< 40 samples), sample starvation ($M < 25$), excessive timing gaps ($> 6\text{ ms}$), rate deviation ($> \pm 15\%$), and excessive phone shaking ($> 1.0\text{ m/s}^2$). |
+| `contact_quality` | [0.0, 1.0] | **Preliminary experimental heuristic**: Product of reliability, normalized band RMS, and motion quietness. *Explicitly uncalibrated; does NOT drive audio or claim proven contact.* |
+
+### Filter Startup Transient Exclusion
+Upon session start, all filter internal delay states are reset. The first 40 accelerometer samples ($\approx 100\text{ ms}$) are marked as filter warmup (`isWarmedUp == false`), heavily penalizing `sensor_reliability` ($\le 0.10$) to prevent startup step transients from corrupting initial feature rows.
+
+### Step 3 Calibration Protocol
+Before setting thresholds or retraining the fusion model, perform the following standardized recording session:
+1. **Setting**: Quiet room with steady background acoustics.
+2. **Phase 1 (0.0s – 3.0s)**: Silent with phone firmly held against cheek (establishes baseline contact noise floor).
+3. **Phase 2 (3.0s – 12.0s)**: Continuous natural speech (9 seconds) with phone held against cheek (captures steady voiced vibration vs mic energy).
+4. **Phase 3 (12.0s – 15.0s)**: Silent with phone held against cheek (3 seconds).
+5. **Evaluation**:
+   - Extract `features.csv` from the resulting `.zip`.
+   - Inspect the distribution of `accelerometer_band_rms` and `phone_motion_level` during Phase 1 vs Phase 2.
+   - Verify separation between silence and phonation before training any classifier or gating model.
+

@@ -98,16 +98,32 @@ class MainActivity : AppCompatActivity() {
         statusDot = findViewById(R.id.statusDot)
         recordingStateText = findViewById(R.id.recordingStateText)
 
-        recorder = SessionRecorder(this) { rate, count ->
-            runOnUiThread {
-                rateText.text = String.format(
-                    Locale.US,
-                    "Accelerometer rate: %.1f Hz  |  %,d samples",
-                    rate,
-                    count
-                )
+        recorder = SessionRecorder(
+            context = this,
+            onRateUpdate = { rate, count ->
+                runOnUiThread {
+                    rateText.text = String.format(
+                        Locale.US,
+                        "Accelerometer rate: %.1f Hz  |  %,d samples",
+                        rate,
+                        count
+                    )
+                }
+            },
+            onTelemetryUpdate = { telemetry ->
+                runOnUiThread {
+                    rateText.text = String.format(
+                        Locale.US,
+                        "%.1f Hz | Vib: %.2f m/s² | Motion: %.2f m/s² | Rel: %d%% (N=%d)",
+                        telemetry.measuredRateHz,
+                        telemetry.vibrationRms,
+                        telemetry.motionLevel,
+                        (telemetry.sensorReliability * 100).toInt(),
+                        telemetry.rollingSampleCount
+                    )
+                }
             }
-        }
+        )
 
         findViewById<TextView>(R.id.deviceInfoText).text = recorder.deviceSummary()
 
