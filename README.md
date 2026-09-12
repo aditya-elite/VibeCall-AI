@@ -62,7 +62,7 @@ In live evaluations under heavy acoustic background noise on the flagship **iQOO
 
 ### iQOO 15 Live Hardware Validation (Sept 12, 2026)
 
-The updated VibeCall app was deployed directly to the flagship **iQOO 15 (`vivo I2501`, Android 16)** with the STMicroelectronics `lsm6dsvx` accelerometer and tested across 14 live sessions extracted via USB ADB:
+The updated VibeCall app was deployed directly to the flagship **iQOO 15 (`vivo I2501`, Android 16)** with the STMicroelectronics `lsm6dsvx` accelerometer and tested across 17 live sessions extracted via USB ADB:
 
 | Session | Label | Duration | Sensor Rate | NPU Inferences | Avg Trust | Key Findings / Verification Status |
 | :--- | :--- | :--- | :--- | :--- | :--- | :--- |
@@ -80,6 +80,9 @@ The updated VibeCall app was deployed directly to the flagship **iQOO 15 (`vivo 
 | **Trial 12** | `Cheek - speaking in quiet` | 18.40s | **400.00 Hz** | 144 | 0.1277 | **Stationary on-cheek: 21 agreements (peak score 1.0000 on Z-axis)** |
 | **Trial 13** | `Cheek - stationary vs movement` | 17.20s | **400.00 Hz** | 135 | 0.1497 | **Tested stationary speech vs speech with phone movement (28 agreements)** |
 | **Trial 14** | `Cheek - speaking with noise` | 18.40s | **400.00 Hz** | 144 | 0.1628 | **Pitch agreement detectable under noise (19 agreements, esp. for 'mmmm')** |
+| **Trial 15** | `Cheek - speaking with noise` | 20.28s | **400.00 Hz** | 159 | 0.844 (Gain) | **Live Step 4 Fusion verified: 12 hangover protections, 0 audio clips, 84 µs latency** |
+| **Trial 16** | `Cheek - speaking with noise` | 21.48s | **400.00 Hz** | 168 | 0.867 (Gain) | **Live Step 4 Fusion verified: 13 hangover protections, 17 pitch agreements** |
+| **Trial 17** | `Cheek - speaking with noise` | 17.84s | **400.00 Hz** | 140 | 0.905 (Gain) | **Live Step 4 Fusion verified: 12 hangover protections, smooth pause attenuation** |
 
 ### Audio–Vibration Pitch Agreement Verification Matrix
 
