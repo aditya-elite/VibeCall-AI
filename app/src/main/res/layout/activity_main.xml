@@ -521,6 +521,25 @@
                         android:text="UNPROCESSED / VOICE_RECOGNITION with hardware effects disabled for true algorithm benchmarking."
                         android:textColor="@color/vibe_text_secondary"
                         android:textSize="11.5sp" />
+
+                    <CheckBox
+                        android:id="@+id/cpuFusionDemoCheckBox"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="10dp"
+                        android:checked="false"
+                        android:text="CPU Fusion Demo (Experimental — Not NPU)"
+                        android:textColor="@color/vibe_text"
+                        android:textSize="13sp"
+                        android:textStyle="bold" />
+
+                    <TextView
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginStart="32dp"
+                        android:text="Runs the 16-feature fusion model on CPU/XNNPACK for calibration. Leave off for mandatory-NPU fail-open mode."
+                        android:textColor="@color/vibe_text_secondary"
+                        android:textSize="11.5sp" />
                 </RadioGroup>
 
                 <TextView

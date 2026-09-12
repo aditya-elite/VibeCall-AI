@@ -15,6 +15,7 @@ import android.view.ViewGroup
 import android.widget.AutoCompleteTextView
 import android.widget.ArrayAdapter
 import android.widget.Button
+import android.widget.CheckBox
 import android.widget.ImageView
 import android.widget.RadioButton
 import android.widget.RadioGroup
@@ -51,6 +52,7 @@ class MainActivity : AppCompatActivity() {
     private lateinit var radioModeStable: RadioButton
     private lateinit var radioModeFair: RadioButton
     private lateinit var modeCharacterizationStatus: TextView
+    private lateinit var cpuFusionDemoCheckBox: CheckBox
 
     // Step 6 UI Components
     private lateinit var npuText: TextView
@@ -75,6 +77,7 @@ class MainActivity : AppCompatActivity() {
 
     private enum class AudioTrack { NONE, RAW, DENOISED, FUSION, CLARITY }
     private var currentlyPlaying = AudioTrack.NONE
+    private var latestCpuFusionDemoEnabled = false
 
     private var recordingStartedMs = 0L
     private val uiHandler = Handler(Looper.getMainLooper())
@@ -127,6 +130,7 @@ class MainActivity : AppCompatActivity() {
         radioModeStable = findViewById(R.id.radioModeStable)
         radioModeFair = findViewById(R.id.radioModeFair)
         modeCharacterizationStatus = findViewById(R.id.modeCharacterizationStatus)
+        cpuFusionDemoCheckBox = findViewById(R.id.cpuFusionDemoCheckBox)
 
         step6AcceleratorText = findViewById(R.id.step6AcceleratorText)
         step6DeviceTypeText = findViewById(R.id.step6DeviceTypeText)
@@ -354,7 +358,8 @@ class MainActivity : AppCompatActivity() {
         } else {
             RecordingMode.STABLE_COMMUNICATION
         }
-        runCatching { recorder.start(label, mode) }
+        latestCpuFusionDemoEnabled = cpuFusionDemoCheckBox.isChecked
+        runCatching { recorder.start(label, mode, latestCpuFusionDemoEnabled) }
             .onSuccess {
                 recordingStartedMs = SystemClock.elapsedRealtime()
                 timerText.text = "00:00.0"
@@ -373,6 +378,7 @@ class MainActivity : AppCompatActivity() {
                 testAutoCompleteTextView.isEnabled = false
                 radioModeStable.isEnabled = false
                 radioModeFair.isEnabled = false
+                cpuFusionDemoCheckBox.isEnabled = false
                 uiHandler.post(timerTask)
             }
             .onFailure { error ->
@@ -422,6 +428,7 @@ class MainActivity : AppCompatActivity() {
                 testAutoCompleteTextView.isEnabled = true
                 radioModeStable.isEnabled = true
                 radioModeFair.isEnabled = true
+                cpuFusionDemoCheckBox.isEnabled = true
                 modeCharacterizationStatus.text = "Last Session: ${recorder.currentMicrophoneCharacterization} (${recorder.currentAudioSource})"
             }
         }
@@ -605,4 +612,3 @@ class PresetAdapter(
 
     override fun getItem(position: Int): PresetItem = items[position]
 }
-

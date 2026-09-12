@@ -326,6 +326,7 @@ class SessionRecorder(
 
     // Recording mode and audio effects
     private var currentRecordingMode: RecordingMode = RecordingMode.STABLE_COMMUNICATION
+    private var currentCpuFusionDemoEnabled: Boolean = false
     private val activeAudioEffects = mutableListOf<AudioEffect>()
     private val audioEffectStatuses = mutableListOf<AudioEffectStatus>()
 
@@ -396,11 +397,16 @@ class SessionRecorder(
     }
 
     @Synchronized
-    fun start(label: String, mode: RecordingMode = RecordingMode.STABLE_COMMUNICATION) {
+    fun start(
+        label: String,
+        mode: RecordingMode = RecordingMode.STABLE_COMMUNICATION,
+        enableCpuFusionDemo: Boolean = false
+    ) {
         check(!recording) { "A session is already recording" }
 
         sessionLabel = label
         currentRecordingMode = mode
+        currentCpuFusionDemoEnabled = enableCpuFusionDemo
         val directory = createSessionDirectory(label)
         sessionDirectory = directory
         pcmFile = File(directory, "microphone.pcm")
@@ -493,9 +499,9 @@ class SessionRecorder(
         fusionConfidenceModel = runCatching {
             FusionConfidenceModel(
                 context = context,
-                requireNonCpuAcceleration = true,
-                forcedAcceleratorName = latestAccelerationVerification?.selectedDeviceName,
-                allowCpuFallback = false
+                requireNonCpuAcceleration = !enableCpuFusionDemo,
+                forcedAcceleratorName = if (enableCpuFusionDemo) null else latestAccelerationVerification?.selectedDeviceName,
+                allowCpuFallback = enableCpuFusionDemo
             )
         }.onFailure { Log.w("SessionRecorder", "Failed to initialize FusionConfidenceModel", it) }
         .getOrNull()
@@ -1497,10 +1503,12 @@ class SessionRecorder(
             put("created_utc", utcFormatter.format(Date()))
             put("test_label", sessionLabel)
             put("recording_mode", currentRecordingMode.name)
+            put("fusion_execution_mode", if (currentCpuFusionDemoEnabled) "CPU_DEVELOPMENT" else "MANDATORY_NPU")
             put("microphone_characterization", currentMicrophoneCharacterization)
-            put("npu_fusion_enabled", true)
+            put("npu_fusion_enabled", fusionConfidenceModel?.isMandatoryNpuSatisfied == true)
+            put("cpu_fusion_demo_enabled", currentCpuFusionDemoEnabled)
             put("npu_model_name", "fusion_gate_model.tflite")
-            put("npu_delegate", "NNAPI delegate initialized — physical NPU not independently verified")
+            put("npu_delegate", latestBackendStatus)
             put("legacy_trust_inference_count", trustInferenceCount)
             put("average_trust_value", averageTrust)
             put("gated_audio_file", if (gatedWavFile?.exists() == true) "gated_microphone.wav" else JSONObject.NULL)

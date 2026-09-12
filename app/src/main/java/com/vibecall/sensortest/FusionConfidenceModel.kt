@@ -43,7 +43,8 @@ data class FusionInferenceResult(
  *  [15] prev_sensor_reliability
  *
  * Normalizes features matching the exported metadata schema and executes via
- * NNAPI delegate with safe fallback to CPU. Fails safe if model or inference is invalid.
+ * a mandatory NNAPI accelerator, or an explicitly selected CPU development mode.
+ * Fails safe if model or inference is invalid.
  */
 class FusionConfidenceModel(
     context: Context,
@@ -181,6 +182,41 @@ class FusionConfidenceModel(
             selectedDeviceType = targetDevice.type
             selectedDeviceVersion = targetDevice.version
             selectedDeviceFeatureLevel = targetDevice.featureLevel
+        }
+
+        // Round 2 fallback: CPU inference is available only when the caller explicitly
+        // selects development mode. Do not route this mode through NNAPI, because an
+        // initialized NNAPI delegate could be mistaken for physical NPU execution.
+        if (!requireNonCpuAcceleration) {
+            try {
+                val cpuOptions = Interpreter.Options().apply {
+                    setUseXNNPACK(true)
+                    setNumThreads(2)
+                }
+                val interp = Interpreter(modelBuffer, cpuOptions)
+                if (!verifyInterpreterTensors(interp)) return
+                interpreter = interp
+                isCompilationSucceeded = true
+                isFullGraphSupported = false
+                delegatedOperationCount = 0
+                isCpuFallbackDetected = true
+                isMandatoryNpuSatisfied = false
+                actualBackend = BACKEND_CPU_DEVELOPMENT
+                backendStatus = BACKEND_CPU_DEVELOPMENT
+                isModelInitialized = true
+                Log.i(TAG, "FusionConfidenceModel initialized in explicitly labelled CPU/XNNPACK development mode.")
+            } catch (e: Exception) {
+                val err = "CPU development model initialization failed: ${e.message}"
+                backendStatus = BACKEND_UNAVAILABLE
+                actualBackend = BACKEND_UNAVAILABLE
+                failureReason = err
+                initializationError = err
+                isModelInitialized = false
+                failureCount++
+                lastError = err
+                Log.e(TAG, err, e)
+            }
+            return
         }
 
         if (requireNonCpuAcceleration) {
@@ -453,6 +489,7 @@ class FusionConfidenceModel(
         const val BACKEND_UNAVAILABLE = "Model unavailable"
         const val BACKEND_NPU_UNAVAILABLE = "NPU unavailable"
         const val BACKEND_CPU_FALLBACK = "CPU fallback"
+        const val BACKEND_CPU_DEVELOPMENT = "CPU/XNNPACK development mode (not NPU)"
         const val BACKEND_NNAPI_REQUESTED = "NNAPI delegate requested"
         const val BACKEND_NNAPI_UNVERIFIED = "NNAPI delegate initialized — physical NPU not independently verified"
 
