@@ -85,6 +85,10 @@ The updated VibeCall app was deployed directly to the flagship **iQOO 15 (`vivo 
 | **Trial 17** | `Cheek - speaking with noise` | 17.84s | **400.00 Hz** | 140 | 0.905 (Gain) | **Live Step 4 Fusion verified: 12 hangover protections, smooth pause attenuation** |
 | **Trial 18** | `Cheek - speaking with noise` | 12.16s | **400.00 Hz** | 95 | 0.1894 | **Fair RNNoise validated: +18.71 dB attenuation, effects disabled, 95 CSV inferences** |
 | **Trial 19** | `Cheek - speaking with noise` | 117.82s | **400.00 Hz** | 921 | 0.1816 | **Stable Telephony default validated: 921 CSV inferences, platform effects active** |
+| **Trial 20** | `Cheek - speaking with noise` | 1.02s | **400.00 Hz** | 8 | 0.0975 | **Sanity test: 8/8 inferences, 83.2 µs latency, +6.45 dB RNNoise cut** |
+| **Trial 21** | `Cheek - speaking with noise` | 12.62s | **400.00 Hz** | 99 | 0.1800 | **Fair Mode benchmark: 99/99 inferences, 80.5 µs latency, +7.09 dB attenuation (99.1% altered)** |
+| **Trial 22** | `Cheek - speaking with noise` | 11.80s | **400.00 Hz** | 93 | 0.0785 | **Fair Mode benchmark: 93/93 inferences, 81.6 µs latency, +8.29 dB attenuation (99.2% altered)** |
+| **Trial 23** | `Cheek - speaking with noise` | 12.67s | **400.00 Hz** | 99 | 0.0754 | **Fair Mode benchmark: 99/99 inferences, 69.1 µs latency, +6.82 dB attenuation (99.0% altered)** |
 
 ### Audio–Vibration Pitch Agreement Verification Matrix
 

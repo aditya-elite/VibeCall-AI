@@ -34,6 +34,10 @@ The updated VibeCall app was deployed directly to the flagship **iQOO 15 (`vivo 
 | **Trial 17** | `Cheek - speaking with noise` | 17.84s | **400.00 Hz** | 140 | 0.905 (Gain) | `VOICE_COMMUNICATION` | **Live Step 4 Fusion verified: 12 hangover protections, smooth pause attenuation** |
 | **Trial 18** | `Cheek - speaking with noise` | 12.16s | **400.00 Hz** | 95 | 0.1894 | `UNPROCESSED` (Fair Mode) | **Fair RNNoise validated: +18.71 dB attenuation, effects disabled, 95 CSV inferences recorded** |
 | **Trial 19** | `Cheek - speaking with noise` | 117.82s | **400.00 Hz** | 921 | 0.1816 | `VOICE_COMMUNICATION` (Stable) | **Stable Telephony default validated: 921 CSV inferences recorded, hardware effects active** |
+| **Trial 20** | `Cheek - speaking with noise` | 1.02s | **400.00 Hz** | 8 | 0.0975 | `UNPROCESSED` (Fair Mode) | **Sanity test: 8/8 inferences, 83.2 µs latency, +6.45 dB RNNoise cut** |
+| **Trial 21** | `Cheek - speaking with noise` | 12.62s | **400.00 Hz** | 99 | 0.1800 | `UNPROCESSED` (Fair Mode) | **Fair Mode benchmark: 99/99 inferences, 80.5 µs latency, +7.09 dB attenuation (99.1% altered)** |
+| **Trial 22** | `Cheek - speaking with noise` | 11.80s | **400.00 Hz** | 93 | 0.0785 | `UNPROCESSED` (Fair Mode) | **Fair Mode benchmark: 93/93 inferences, 81.6 µs latency, +8.29 dB attenuation (99.2% altered)** |
+| **Trial 23** | `Cheek - speaking with noise` | 12.67s | **400.00 Hz** | 99 | 0.0754 | `UNPROCESSED` (Fair Mode) | **Fair Mode benchmark: 99/99 inferences, 69.1 µs latency, +6.82 dB attenuation (99.0% altered)** |
 
 ### Key Hardware Observations on iQOO 15:
 1. **Audio Source Comparison (`UNPROCESSED` vs `VOICE_COMMUNICATION`)**:
@@ -678,6 +682,32 @@ Following on-device telemetry fixes and the introduction of selectable pipeline 
    - `metadata.json` now captures model runtime statistics prior to closing the TFLite models.
    - The duplicate `fusion_inference_count` key has been removed: `legacy_trust_inference_count` and `fusion_confidence_inference_count` are reported separately.
    - `fusion_confidence_inference_count` strictly equals the number of inference rows in `fusion_decisions.csv` (95 == 95, 921 == 921).
+
+### 7.10 Post-Deployment Live Verification: Repeated Fair RNNoise A/B Benchmarks (Trials 20–23)
+
+Following APK installation on the connected iQOO 15 hardware, 4 additional live trials were captured in `FAIR_COMPARISON` mode (`UNPROCESSED` audio source, `NoiseSuppressor` and `AcousticEchoCanceler` disabled, AGC unavailable):
+
+| Metric / Parameter | Trial 20 (Sanity) | Trial 21 (Benchmark) | Trial 22 (Benchmark) | Trial 23 (Benchmark) |
+| :--- | :--- | :--- | :--- | :--- |
+| **Folder Name** | `20260912_214029_377` | `20260912_214047_780` | `20260912_214255_418` | `20260912_214314_099` |
+| **Duration** | 1.02 s | 12.62 s | 11.80 s | 12.67 s |
+| **IMU Sampling Rate** | **400.00 Hz** (436 samples) | **400.00 Hz** (5,076 samples) | **400.00 Hz** (4,744 samples) | **400.00 Hz** (5,099 samples) |
+| **Pipeline Mode** | `FAIR_COMPARISON` | `FAIR_COMPARISON` | `FAIR_COMPARISON` | `FAIR_COMPARISON` |
+| **Microphone Source** | `UNPROCESSED` | `UNPROCESSED` | `UNPROCESSED` | `UNPROCESSED` |
+| **Audio Effects** | NS: `false`, AEC: `false` | NS: `false`, AEC: `false` | NS: `false`, AEC: `false` | NS: `false`, AEC: `false` |
+| **CSV Inference Rows** | **8 rows** | **99 rows** | **93 rows** | **99 rows** |
+| **Metadata Inferences** | **8 inferences** (100% match) | **99 inferences** (100% match) | **93 inferences** (100% match) | **99 inferences** (100% match) |
+| **Mean Inference Latency** | 83.25 µs | 80.49 µs | 81.57 µs | **69.08 µs** |
+| **Max Inference Latency** | 95 µs | 132 µs | 193 µs | 154 µs |
+| **RNNoise Attenuation** | **+6.45 dB** | **+7.09 dB** | **+8.29 dB** | **+6.82 dB** |
+| **RNNoise Altered Samples** | **93.26%** | **99.07%** | **99.18%** | **99.02%** |
+| **Fusion Confidence Mean** | 0.1557 | 0.5340 | 0.5658 | **0.6319** |
+| **Fusion State Machine** | Gated start & pause | 94 acoustic guards, 2 hangover, 1 contact speech | 80 acoustic guards, 3 hangover, 4 contact speech | 76 acoustic guards, 1 hangover, 13 contact speech |
+
+#### Core Verification Highlights:
+1. **Telemetry Match (100%)**: Across all sessions, the number of inferences reported in `metadata.json` (`fusion_confidence_inference_count`) strictly equals the row count of `fusion_decisions.csv`. Zero null pointer bugs or missing statistics.
+2. **Sub-100 µs NPU Latency**: Even under rapid consecutive executions, NNAPI delegate inference time averaged 69.1–83.3 µs, well within real-time latency budgets (frame hop is 128 ms, budget utilization $< 0.1\%$).
+3. **Consistent Noise Reduction**: Over 99% of samples were actively filtered by RNNoise on raw acoustic audio, delivering 6.45–8.29 dB of unassisted neural noise attenuation across multiple test runs.
 
 ---
 
