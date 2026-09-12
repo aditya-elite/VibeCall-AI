@@ -21,6 +21,7 @@ The updated VibeCall app was deployed directly to the flagship **iQOO 15 (`vivo 
 | **Trial 4** | `Cheek - speaking with noise` | 15.46s | **400.00 Hz** | 121 | 0.2125 | `UNPROCESSED` | **97.6% Voiced peak preserved** |
 | **Trial 5** | `Cheek - speaking with noise` | 15.96s | **400.00 Hz** | 125 | 0.1539 | `VOICE_COMMUNICATION` | **100% Intelligible (Peak 0.2926 vs Raw 0.2864)** |
 | **Trial 6** | `Cheek - speaking with noise` | 15.86s | **400.00 Hz** | 124 | 0.1922 | `VOICE_COMMUNICATION` | **100% Preserved (Peak 0.1813 vs Raw 0.1768)** |
+| **Trial 7** | `Cheek - speaking in quiet` | 15.84s | **400.00 Hz** | 124 | 0.1363 | `VOICE_COMMUNICATION` | **Step 3 live telemetry & features.csv verified** |
 
 ### Key Hardware Observations on iQOO 15:
 1. **Audio Source Comparison (`UNPROCESSED` vs `VOICE_COMMUNICATION`)**:
