@@ -38,6 +38,8 @@ The updated VibeCall app was deployed directly to the flagship **iQOO 15 (`vivo 
 | **Trial 21** | `Cheek - speaking with noise` | 12.62s | **400.00 Hz** | 99 | 0.1800 | `UNPROCESSED` (Fair Mode) | **Fair Mode benchmark: 99/99 inferences, 80.5 µs latency, +7.09 dB attenuation (99.1% altered)** |
 | **Trial 22** | `Cheek - speaking with noise` | 11.80s | **400.00 Hz** | 93 | 0.0785 | `UNPROCESSED` (Fair Mode) | **Fair Mode benchmark: 93/93 inferences, 81.6 µs latency, +8.29 dB attenuation (99.2% altered)** |
 | **Trial 23** | `Cheek - speaking with noise` | 12.67s | **400.00 Hz** | 99 | 0.0754 | `UNPROCESSED` (Fair Mode) | **Fair Mode benchmark: 99/99 inferences, 69.1 µs latency, +6.82 dB attenuation (99.0% altered)** |
+| **Trial 24** | `Cheek - speaking with noise` | 14.88s | **400.00 Hz** | 116 | 0.0874 | `UNPROCESSED` (Fair Mode) | **Clarity track live verification: 116/116 inferences, 80.5 µs latency, +1.94 dB speech gain, 0.638 aligned correlation** |
+
 
 ### Key Hardware Observations on iQOO 15:
 1. **Audio Source Comparison (`UNPROCESSED` vs `VOICE_COMMUNICATION`)**:
