@@ -26,6 +26,8 @@ The updated VibeCall app was deployed directly to the flagship **iQOO 15 (`vivo 
 | **Trial 9** | `Cheek - speaking in quiet` | 17.58s | **400.00 Hz** | 138 | 0.0987 | `VOICE_COMMUNICATION` | **On-cheek pitch agreement validated (23 reliable frames, Δf down to 0.15 Hz)** |
 | **Trial 10** | `Away-from-cheek negative control` | 15.16s | **400.00 Hz** | 119 | 0.0938 | `VOICE_COMMUNICATION` | **Negative control: agreement drops to 5 frames (0 during 'aaaa')** |
 | **Trial 11** | `Cheek - quiet baseline check` | 17.94s | **400.00 Hz** | 141 | 0.1446 | `VOICE_COMMUNICATION` | **Silence rejection verified: zero false pitch agreements during silence** |
+| **Trial 12** | `Cheek - speaking in quiet` | 18.40s | **400.00 Hz** | 144 | 0.1277 | `VOICE_COMMUNICATION` | **21 reliable agreements (Δf down to 0.06 Hz, Score 1.0000 on Z-axis)** |
+| **Trial 13** | `Cheek - speaking in quiet` | 17.20s | **400.00 Hz** | 135 | 0.1497 | `VOICE_COMMUNICATION` | **28 reliable agreements (Δf down to 0.04 Hz, Score 1.0000 on Z-axis)** |
 
 ### Key Hardware Observations on iQOO 15:
 1. **Audio Source Comparison (`UNPROCESSED` vs `VOICE_COMMUNICATION`)**:
@@ -181,6 +183,35 @@ Trial 11 (`20260912_170357_939_cheek_speaking_in_quiet`, extracted via ADB Offic
 - **Vibration Peak Gating**: The accelerometer picked up subtle tissue/contact vibrations, identifying 47 valid vibration peaks on the Z-axis (mean band RMS $0.0144\text{ m/s}^2$).
 - **Zero False Pitch Agreements**: Because the microphone pitch was correctly gated off, **0 false pitch agreements** were produced (`pitch_agreement_score = 0.0000`, `pitch_agreement_reliable = 0` across all 141 frames).
 - **Physical Significance**: Confirms that accidental mechanical vibrations, heartbeats, or sensor noise floor peaks do not trigger false agreement scores when the user is silent.
+
+### Detailed Live Feature Extraction Readings (Trials 12 & 13: High-Confidence On-Cheek Pitch Agreement on iQOO 15):
+Trials 12 and 13 (`20260912_172000_955_cheek_speaking_in_quiet` and `20260912_172116_220_cheek_speaking_in_quiet`, extracted via ADB Office Kit) provided conclusive multi-session replication of on-cheek pitch agreement:
+
+- **Trial 12 (18.40s, 144 frames, 7,404 IMU samples)**:
+  - **21 reliable pitch agreements** (`pitch_agreement_reliable == 1`).
+  - Perfect sub-0.1 Hz agreement instances:
+    - At 4,864 ms: Mic = **133.21 Hz**, Accel Z = **133.26 Hz** ($\Delta f = \mathbf{0.06\text{ Hz}}$, Score = **1.0000**).
+    - At 7,168 ms: Mic = **132.81 Hz**, Accel Z = **132.89 Hz** ($\Delta f = \mathbf{0.08\text{ Hz}}$, Score = **1.0000**).
+    - At 5,888 ms: Mic = **130.18 Hz**, Accel Z = **129.92 Hz** ($\Delta f = \mathbf{0.27\text{ Hz}}$, Score = **0.9994**).
+  - Alignment lag: min 0.20 ms, max 2.20 ms, mean **1.20 ms**.
+
+- **Trial 13 (17.20s, 135 frames, 6,920 IMU samples)**:
+  - **28 reliable pitch agreements** across active speech.
+  - Remarkable sub-0.25 Hz pitch synchronization:
+    - At 10,368 ms: Mic = **147.90 Hz**, Accel Z = **147.85 Hz** ($\Delta f = \mathbf{0.04\text{ Hz}}$, Score = **1.0000**).
+    - At 10,112 ms: Mic = **145.46 Hz**, Accel Z = **145.56 Hz** ($\Delta f = \mathbf{0.11\text{ Hz}}$, Score = **0.9999**).
+    - At 11,008 ms: Mic = **145.47 Hz**, Accel Z = **145.68 Hz** ($\Delta f = \mathbf{0.21\text{ Hz}}$, Score = **0.9997**).
+    - At 7,168 ms: Mic = **146.50 Hz**, Accel Z = **146.28 Hz** ($\Delta f = \mathbf{0.23\text{ Hz}}$, Score = **0.9996**).
+    - At 4,736 ms: Mic = **150.36 Hz**, Accel Z = **150.61 Hz** ($\Delta f = \mathbf{0.26\text{ Hz}}$, Score = **0.9995**).
+  - Alignment lag: min 0.47 ms, max 2.47 ms, mean **1.47 ms**.
+
+| Trial | Condition | Frames | Voiced Frames | Reliable Agreements | Min $\Delta f$ | Peak Score | Alignment Lag (Mean) |
+| :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- |
+| **Trial 9** | On-Cheek | 138 | 64 | **23** | 0.15 Hz | 0.9998 | 1.25 ms |
+| **Trial 10** | Away-from-Cheek | 119 | 63 | **5 (0 on 'aaaa')** | 0.39 Hz | 0.9988 | 1.36 ms |
+| **Trial 11** | Silence Baseline | 141 | 1 | **0** | - | 0.0000 | 1.25 ms |
+| **Trial 12** | On-Cheek | 144 | 56 | **21** | **0.06 Hz** | **1.0000** | 1.20 ms |
+| **Trial 13** | On-Cheek | 135 | 68 | **28** | **0.04 Hz** | **1.0000** | 1.47 ms |
 
 ![iQOO Hardware Verification Comparison](images/iqoo_trial_comparison.png)
 
