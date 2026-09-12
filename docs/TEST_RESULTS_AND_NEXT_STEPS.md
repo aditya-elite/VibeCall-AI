@@ -23,8 +23,8 @@ The updated VibeCall app was deployed directly to the flagship **iQOO 15 (`vivo 
 | **Trial 6** | `Cheek - speaking with noise` | 15.86s | **400.00 Hz** | 124 | 0.1922 | `VOICE_COMMUNICATION` | **100% Preserved (Peak 0.1813 vs Raw 0.1768)** |
 | **Trial 7** | `Cheek - speaking in quiet` | 15.84s | **400.00 Hz** | 124 | 0.1363 | `VOICE_COMMUNICATION` | **Step 3 live telemetry & features.csv verified** |
 | **Trial 8** | `Cheek - speaking with noise` | 17.22s | **400.00 Hz** | 135 | 0.0536 | `VOICE_COMMUNICATION` | **94.5% Voiced peak preserved (0.2625 vs Raw 0.2777)** |
-| **Trial 9** | `Cheek - speaking in quiet` | 17.58s | **400.00 Hz** | 138 | 0.0987 | `VOICE_COMMUNICATION` | **Pitch Agreement Validated (Δf down to 0.15 Hz, Score 0.9998 on Z-axis)** |
-| **Trial 10** | `Cheek - speaking in quiet` | 15.16s | **400.00 Hz** | 119 | 0.0938 | `VOICE_COMMUNICATION` | **Reproducible Z-Axis Agreement (Δf down to 0.39 Hz, Score 0.9988)** |
+| **Trial 9** | `Cheek - speaking in quiet` | 17.58s | **400.00 Hz** | 138 | 0.0987 | `VOICE_COMMUNICATION` | **On-cheek pitch agreement validated (23 reliable frames, Δf down to 0.15 Hz)** |
+| **Trial 10** | `Away-from-cheek negative control` | 15.16s | **400.00 Hz** | 119 | 0.0938 | `VOICE_COMMUNICATION` | **Negative control: agreement drops to 5 frames (0 during 'aaaa')** |
 
 ### Key Hardware Observations on iQOO 15:
 1. **Audio Source Comparison (`UNPROCESSED` vs `VOICE_COMMUNICATION`)**:
@@ -150,27 +150,28 @@ During sustained phonation segments, microphone pitch matched the Z-axis acceler
 
 This provides direct empirical proof on the iQOO 15 hardware that bone-conducted vocal vibrations closely track speech fundamental pitch on the Z-axis, with alignment lag staying below 2.3 ms across the entire session.
 
-### Detailed Live Feature Extraction Readings (Trial 10: Multi-Trial Replicability on iQOO 15):
-Trial 10 (`20260912_165406_477_cheek_speaking_in_quiet`, extracted via ADB Office Kit) verified replicability across an independent follow-up recording on the connected iQOO 15 (119 frames, 15.16s, 6,100 IMU samples at 400.00 Hz):
+### Detailed Live Feature Extraction Readings (Trial 10: Away-from-Cheek Negative Control on iQOO 15):
+Trial 10 (`20260912_165406_477_cheek_speaking_in_quiet`, extracted via ADB Office Kit) is an **away-from-cheek negative-control recording**. 
 
-| Feature Dimension | Minimum | Maximum | Mean | Std Dev | Physical / Algorithmic Significance |
-| :--- | :--- | :--- | :--- | :--- | :--- |
-| `sensor_alignment_lag_ms` | **0.36 ms** | **2.36 ms** | **1.36 ms** | 0.69 ms | Rock-solid DMA timing alignment; 0 lag dropouts |
-| `microphone_rms` | 0.000000 | 0.138450 | 0.024512 | 0.031200 | Strong speech capture |
-| `accel_best_axis` | - | - | **Z (100%)** | - | 100% of agreement frames locked onto Z-axis |
-| `pitch_difference_hz` | **0.39 Hz** | 8.05 Hz | 4.47 Hz | 3.25 Hz | Close frequency delta during active voiced resonance |
-| `pitch_agreement_score` | 0.0000 | **0.9988** | 0.7716 (active) | 0.182 | Replicated high Gaussian agreement score |
+Reliable agreement decreased from **23 frames on-cheek (Trial 9)** to **5 frames away-from-cheek (Trial 10)**, including **zero agreements during the main "aaaa" interval**. This supports contact sensitivity but does not yet establish a final classifier.
 
-#### Top Replicated Audio–Vibration Agreement Windows in Trial 10:
-| Window Start (ms) | Mic Pitch (Hz) | Best Axis | Vibration Peak (Hz) | $\Delta f$ (Hz) | Agreement Score | Agreement Reliable |
-| :--- | :--- | :--- | :--- | :--- | :--- | :--- |
-| 7040.0 ms | 120.03 Hz | **Z** | 126.49 Hz | 6.46 Hz | 0.7216 | 1 |
-| 9472.0 ms | 143.07 Hz | **Z** | 135.02 Hz | 8.05 Hz | 0.6026 | 1 |
-| 12032.0 ms | 133.56 Hz | **Z** | 136.37 Hz | 2.80 Hz | **0.9404** | 1 |
-| 13312.0 ms | 132.88 Hz | **Z** | 133.27 Hz | **0.39 Hz** | **0.9988** | 1 |
-| 13440.0 ms | 128.79 Hz | **Z** | 122.10 Hz | 6.69 Hz | 0.7049 | 1 |
+| Feature Dimension | On-Cheek (Trial 9) | Away-from-Cheek (Trial 10) | Physical Significance |
+| :--- | :--- | :--- | :--- |
+| `pitch_agreement_reliable == 1` | **23 frames** | **5 frames** | Sharp 78% drop in pitch agreement when phone is held off the face |
+| Main "aaaa" Interval Agreements | Multiple valid matches | **0 agreements** | Airborne sound without skin contact fails to induce vocal fundamental resonance |
+| `sensor_alignment_lag_ms` | Mean 1.25 ms | Mean 1.36 ms | Timing synchronization remains rock-solid in both conditions (< 2.4 ms) |
+| `microphone_rms` | Max 0.123388 | Max 0.138450 | Speech acoustic power remains loud in both trials |
 
-Across consecutive independent recordings (Trial 9 and Trial 10), the Z-axis accelerometer vibration consistently locked onto speech fundamental pitch within $< 0.40\text{ Hz}$ on resonant voiced frames.
+#### Top Agreement Windows in Trial 10:
+| Window Start (ms) | Mic Pitch (Hz) | Best Axis | Vibration Peak (Hz) | $\Delta f$ (Hz) | Agreement Score | Agreement Reliable | Context |
+| :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- |
+| 7040.0 ms | 120.03 Hz | **Z** | 126.49 Hz | 6.46 Hz | 0.7216 | 1 | Inter-phrase transition |
+| 9472.0 ms | 143.07 Hz | **Z** | 135.02 Hz | 8.05 Hz | 0.6026 | 1 | High vocal effort |
+| 12032.0 ms | 133.56 Hz | **Z** | 136.37 Hz | 2.80 Hz | **0.9404** | 1 | Nasal phonation ("mmmm") |
+| 13312.0 ms | 132.88 Hz | **Z** | 133.27 Hz | **0.39 Hz** | **0.9988** | 1 | Nasal phonation ("mmmm") |
+| 13440.0 ms | 128.79 Hz | **Z** | 122.10 Hz | 6.69 Hz | 0.7049 | 1 | Trailing phonation |
+
+**Conclusion from Negative Control**: The complete absence of pitch agreement during the open vowel "aaaa" when held away from the cheek confirms that true tissue conduction is required for the accelerometer to capture vowel fundamental pitch. The few residual agreements occur during loud nasal phonemes ("mmmm") where acoustic-mechanical chassis coupling is strongest. This supports contact sensitivity but does not yet establish a final classifier.
 
 ![iQOO Hardware Verification Comparison](images/iqoo_trial_comparison.png)
 
