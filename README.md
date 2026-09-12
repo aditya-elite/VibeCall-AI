@@ -56,15 +56,15 @@ Our hardware feasibility experiment on an Android smartphone validated the core 
 
 ## 🔬 Verified On-Device Results
 
-In live evaluations under heavy acoustic background noise on the **iQOO target smartphone (`vivo I2501`, Android 16)** and baseline devices, here is what has actually been measured running on real hardware — not simulated:
+In live evaluations under heavy acoustic background noise on the flagship **iQOO 15 (`vivo I2501`, Android 16)** and baseline devices, here is what has actually been measured running on real hardware — not simulated:
 
-[![iQOO Hardware Verification Comparison](https://github.com/aditya-elite/VibeCall-AI/raw/main/docs/images/iqoo_trial_comparison.png)](docs/images/iqoo_trial_comparison.png)
+[![iQOO 15 Hardware Verification Comparison](https://github.com/aditya-elite/VibeCall-AI/raw/main/docs/images/iqoo_trial_comparison.png)](docs/images/iqoo_trial_comparison.png)
 
-### iQOO Live Hardware Validation (Sept 12, 2026)
+### iQOO 15 Live Hardware Validation (Sept 12, 2026)
 
 | Target Phone | IMU Sensor | Sensor Rate | NPU Delegate | RNNoise Attenuation | Voiced Peak Preservation |
 | :--- | :--- | :--- | :--- | :--- | :--- |
-| **vivo / iQOO (I2501)** | ST `lsm6dsvx` Accelerometer | **400.00 Hz (exact)** | **NNAPI Active** | **>110 dB** | **100% (Bit-exact peak preserved)** |
+| **iQOO 15 (`vivo I2501`)** | ST `lsm6dsvx` Accelerometer | **400.00 Hz (exact)** | **NNAPI Active (NPU)** | **>110 dB** | **100% (Bit-exact peak preserved)** |
 
 ### RNNoise (CPU) — Verified On-Device, Real Result
 

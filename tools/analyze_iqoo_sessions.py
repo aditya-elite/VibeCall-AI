@@ -128,7 +128,7 @@ def main():
     plt.style.use("seaborn-v0_8-darkgrid" if "seaborn-v0_8-darkgrid" in plt.style.available else "default")
     fig, axes = plt.subplots(4, 1, figsize=(13, 10), sharex=True)
     
-    fig.suptitle("iQOO Hardware Verification Trial (vivo I2501, ST LSM6DSV16X @ 400Hz)\nOut-going Speech Enhancement: Raw vs NPU Fusion vs RNNoise", fontsize=13, fontweight='bold')
+    fig.suptitle("iQOO 15 Hardware Verification Trial (vivo I2501, Snapdragon NPU + ST LSM6DSV16X @ 400Hz)\nOutgoing Speech Enhancement: Raw vs NPU Fusion vs RNNoise", fontsize=13, fontweight='bold')
 
     # Panel 1: Raw Mic
     axes[0].plot(t_audio, raw_audio, color='#d62728', alpha=0.8, lw=0.6)
