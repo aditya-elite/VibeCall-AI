@@ -318,6 +318,43 @@ def build_dataset(
         writer.writeheader()
         writer.writerows(dataset_rows)
 
+    # Compute breakdown per session and per class
+    session_class_counts: Dict[str, Dict[str, int]] = {}
+    for r in dataset_rows:
+        alias = r["trial_alias"]
+        lbl = r["physical_label"]
+        if alias not in session_class_counts:
+            session_class_counts[alias] = {c: 0 for c in manifest["labels"]}
+        session_class_counts[alias][lbl] = session_class_counts[alias].get(lbl, 0) + 1
+
+    training_class_counts: Dict[str, int] = {}
+    for r in dataset_rows:
+        if float(r["training_target"]) >= 0.0:
+            lbl = r["physical_label"]
+            training_class_counts[lbl] = training_class_counts.get(lbl, 0) + 1
+
+    # Generate explicit warnings for small classes and single-session dependencies
+    audit_warnings: List[str] = []
+    for lbl in manifest["labels"]:
+        if lbl == "UNCERTAIN":
+            continue
+        cnt = training_class_counts.get(lbl, 0)
+        if cnt == 0:
+            audit_warnings.append(f"CRITICAL: Class '{lbl}' has ZERO training samples!")
+        elif cnt < 50:
+            audit_warnings.append(
+                f"WARNING: Class '{lbl}' has only {cnt} training samples (< 50 threshold). "
+                f"Statistical power and generalizability are constrained."
+            )
+
+    away_sessions = set(r["trial_alias"] for r in dataset_rows if r["physical_label"] == "AWAY_SPEECH")
+    if len(away_sessions) <= 1:
+        audit_warnings.append(
+            f"WARNING: Negative control class 'AWAY_SPEECH' is represented by only {len(away_sessions)} session(s) "
+            f"({list(away_sessions)}). In Leave-One-Session-Out evaluation, models trained without this session have "
+            f"0 negative speech samples, causing 100% false-positive rate on airborne speech."
+        )
+
     # Write audit JSON report
     audit_summary = {
         "manifest_file": manifest_path,
@@ -328,7 +365,10 @@ def build_dataset(
         "training_windows_count": sum(1 for r in dataset_rows if float(r["training_target"]) >= 0.0),
         "excluded_uncertain_windows": sum(1 for r in dataset_rows if float(r["training_target"]) < 0.0),
         "label_distribution": label_counts,
+        "training_class_distribution": training_class_counts,
         "session_training_counts": session_counts,
+        "session_class_distribution": session_class_counts,
+        "warnings": audit_warnings,
         "session_audit_details": audit_records,
     }
 

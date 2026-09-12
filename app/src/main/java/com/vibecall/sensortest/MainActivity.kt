@@ -158,14 +158,22 @@ class MainActivity : AppCompatActivity() {
             val backend = warmup.getBackendStatus()
             warmup.close()
             npuText.text = "Fusion Backend: $backend"
-            if (backend.contains("NNAPI")) {
-                npuText.setTextColor(ContextCompat.getColor(this, R.color.vibe_success_green))
-                npuIcon.setImageResource(R.drawable.ic_shield_check)
-                npuIcon.imageTintList = ContextCompat.getColorStateList(this, R.color.vibe_success_green)
-            } else {
-                npuText.setTextColor(ContextCompat.getColor(this, R.color.vibe_primary))
-                npuIcon.setImageResource(R.drawable.ic_info)
-                npuIcon.imageTintList = ContextCompat.getColorStateList(this, R.color.vibe_primary)
+            when {
+                backend.contains("NNAPI") -> {
+                    npuText.setTextColor(ContextCompat.getColor(this, R.color.vibe_success_green))
+                    npuIcon.setImageResource(R.drawable.ic_shield_check)
+                    npuIcon.imageTintList = ContextCompat.getColorStateList(this, R.color.vibe_success_green)
+                }
+                backend.contains("CPU") -> {
+                    npuText.setTextColor(ContextCompat.getColor(this, R.color.vibe_primary))
+                    npuIcon.setImageResource(R.drawable.ic_info)
+                    npuIcon.imageTintList = ContextCompat.getColorStateList(this, R.color.vibe_primary)
+                }
+                else -> {
+                    npuText.setTextColor(ContextCompat.getColor(this, R.color.vibe_recording_red))
+                    npuIcon.setImageResource(R.drawable.ic_info)
+                    npuIcon.imageTintList = ContextCompat.getColorStateList(this, R.color.vibe_recording_red)
+                }
             }
         } catch (e: Exception) {
             Log.w("MainActivity", "Fusion model init check: ${e.message}")

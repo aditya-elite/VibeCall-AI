@@ -70,26 +70,25 @@
       "schema_version": "step3_34col",
       "is_compatible": true,
       "exclusion_reason": null,
-      "condition_summary": "Continuous stationary silence on cheek",
+      "condition_summary": "Alternating stationary silence and phone movement without speech",
       "default_label": "UNCERTAIN",
       "intervals": [
-        { "start_ms": 1500.0, "end_ms": 16500.0, "label": "SILENCE_STILL", "notes": "Continuous silence on cheek, sensor noise floor baseline" }
+        { "start_ms": 1500.0, "end_ms": 3000.0, "label": "SILENCE_STILL", "notes": "Stationary silence baseline (0-3s phase)" },
+        { "start_ms": 3500.0, "end_ms": 6800.0, "label": "SILENCE_MOVEMENT", "notes": "Handling motion without speech (3-7s phase)" },
+        { "start_ms": 7400.0, "end_ms": 9600.0, "label": "SILENCE_STILL", "notes": "Stationary silence baseline (7-10s phase)" },
+        { "start_ms": 10200.0, "end_ms": 13600.0, "label": "SILENCE_MOVEMENT", "notes": "Handling motion without speech (10-14s phase)" },
+        { "start_ms": 14200.0, "end_ms": 16500.0, "label": "SILENCE_STILL", "notes": "Stationary silence baseline (14-17s phase)" }
       ]
     },
     {
       "session_id": "20260912_172000_955_cheek_speaking_in_quiet",
       "trial_alias": "Trial 12",
       "schema_version": "step3_34col",
-      "is_compatible": true,
-      "exclusion_reason": null,
-      "condition_summary": "Stationary on-cheek speech in quiet replication",
+      "is_compatible": false,
+      "exclusion_reason": "Unconfirmed phonation timing / non-standard interval protocol; excluded to prevent label noise.",
+      "condition_summary": "Unconfirmed protocol session (excluded from core training set)",
       "default_label": "UNCERTAIN",
-      "intervals": [
-        { "start_ms": 1500.0, "end_ms": 3500.0, "label": "SILENCE_STILL", "notes": "Pre-speech stationary pause" },
-        { "start_ms": 4000.0, "end_ms": 7500.0, "label": "CONTACT_SPEECH", "notes": "Sustained 'aaaa' phonation on cheek" },
-        { "start_ms": 7800.0, "end_ms": 10000.0, "label": "SILENCE_STILL", "notes": "Inter-phonation silent pause" },
-        { "start_ms": 10200.0, "end_ms": 14000.0, "label": "CONTACT_SPEECH", "notes": "Sustained 'mmmm' phonation on cheek" }
-      ]
+      "intervals": []
     },
     {
       "session_id": "20260912_172116_220_cheek_speaking_in_quiet",
@@ -101,12 +100,9 @@
       "default_label": "UNCERTAIN",
       "intervals": [
         { "start_ms": 1500.0, "end_ms": 3200.0, "label": "SILENCE_STILL", "notes": "Pre-speech stationary pause" },
-        { "start_ms": 3456.0, "end_ms": 7200.0, "label": "CONTACT_SPEECH", "notes": "Stationary 'aaaa' phonation on cheek" },
-        { "start_ms": 7500.0, "end_ms": 9300.0, "label": "SILENCE_STILL", "notes": "Stationary silent pause" },
-        { "start_ms": 9400.0, "end_ms": 9650.0, "label": "SILENCE_MOVEMENT", "notes": "Handling motion spike during silence" },
-        { "start_ms": 9728.0, "end_ms": 11000.0, "label": "CONTACT_SPEECH", "notes": "Stationary 'mmmm' phonation" },
-        { "start_ms": 11008.0, "end_ms": 12000.0, "label": "CONTACT_SPEECH_MOVEMENT", "notes": "Speaking during deliberate phone movement/shift" },
-        { "start_ms": 12000.0, "end_ms": 14500.0, "label": "CONTACT_SPEECH", "notes": "Resumed steady phonation" }
+        { "start_ms": 3500.0, "end_ms": 7200.0, "label": "CONTACT_SPEECH", "notes": "Stationary 'aaaa' phonation on cheek" },
+        { "start_ms": 7500.0, "end_ms": 9200.0, "label": "SILENCE_STILL", "notes": "Stationary silent pause" },
+        { "start_ms": 9600.0, "end_ms": 13500.0, "label": "CONTACT_SPEECH_MOVEMENT", "notes": "Speaking during deliberate phone movement/shift (approx 9-13s)" }
       ]
     },
     {

@@ -86,4 +86,92 @@ class FusionModelTest {
         assertEquals("prev_microphone_log_energy_db", expectedFeatures[11])
         assertEquals("prev_sensor_reliability", expectedFeatures[15])
     }
+
+    private fun createValidMetadataJson(): org.json.JSONObject {
+        val root = org.json.JSONObject()
+        val input = org.json.JSONObject()
+        input.put("shape", org.json.JSONArray(listOf(1, 16)))
+        input.put("feature_order", org.json.JSONArray(FusionConfidenceModel.EXPECTED_FEATURE_ORDER))
+        root.put("input_tensor", input)
+
+        val output = org.json.JSONObject()
+        output.put("shape", org.json.JSONArray(listOf(1, 1)))
+        root.put("output_tensor", output)
+
+        val norm = org.json.JSONObject()
+        norm.put("means", org.json.JSONArray(List(16) { 0.0 }))
+        norm.put("stds", org.json.JSONArray(List(16) { 1.0 }))
+        norm.put("clip_min", -5.0)
+        norm.put("clip_max", 5.0)
+        root.put("normalization", norm)
+
+        return root
+    }
+
+    @Test
+    fun testValidMetadataAccepted() {
+        val validJson = createValidMetadataJson().toString()
+        val result = FusionConfidenceModel.validateAndParseMetadataJson(validJson)
+        assertTrue("Valid metadata must pass validation", result.isValid)
+        assertEquals(16, result.means?.size)
+        assertEquals(16, result.stds?.size)
+    }
+
+    @Test
+    fun testMetadataRejectsIncorrectFeatureCount() {
+        val json = createValidMetadataJson()
+        // Only 15 features
+        json.getJSONObject("input_tensor").put("feature_order", org.json.JSONArray(FusionConfidenceModel.EXPECTED_FEATURE_ORDER.take(15)))
+        val result = FusionConfidenceModel.validateAndParseMetadataJson(json.toString())
+        assertFalse("Metadata with 15 features must be rejected", result.isValid)
+        assertTrue(result.error!!.contains("16 features"))
+    }
+
+    @Test
+    fun testMetadataRejectsIncorrectFeatureNamesOrOrder() {
+        val json = createValidMetadataJson()
+        val modifiedList = FusionConfidenceModel.EXPECTED_FEATURE_ORDER.toMutableList()
+        modifiedList[0] = "wrong_feature_name"
+        json.getJSONObject("input_tensor").put("feature_order", org.json.JSONArray(modifiedList))
+        val result = FusionConfidenceModel.validateAndParseMetadataJson(json.toString())
+        assertFalse("Metadata with modified feature name must be rejected", result.isValid)
+        assertTrue(result.error!!.contains("Feature mismatch"))
+    }
+
+    @Test
+    fun testMetadataRejectsNonPositiveStandardDeviation() {
+        // Zero standard deviation
+        val jsonZeroStd = createValidMetadataJson()
+        val zeroStds = List(16) { if (it == 3) 0.0 else 1.0 }
+        jsonZeroStd.getJSONObject("normalization").put("stds", org.json.JSONArray(zeroStds))
+        val resZero = FusionConfidenceModel.validateAndParseMetadataJson(jsonZeroStd.toString())
+        assertFalse("Metadata with zero std must be rejected", resZero.isValid)
+        assertTrue(resZero.error!!.contains("strictly positive"))
+
+        // Negative standard deviation
+        val jsonNegStd = createValidMetadataJson()
+        val negStds = List(16) { if (it == 5) -0.5 else 1.0 }
+        jsonNegStd.getJSONObject("normalization").put("stds", org.json.JSONArray(negStds))
+        val resNeg = FusionConfidenceModel.validateAndParseMetadataJson(jsonNegStd.toString())
+        assertFalse("Metadata with negative std must be rejected", resNeg.isValid)
+        assertTrue(resNeg.error!!.contains("strictly positive"))
+    }
+
+    @Test
+    fun testMetadataRejectsNon16MeansOrStds() {
+        val jsonShortMeans = createValidMetadataJson()
+        jsonShortMeans.getJSONObject("normalization").put("means", org.json.JSONArray(List(12) { 0.0 }))
+        val resShort = FusionConfidenceModel.validateAndParseMetadataJson(jsonShortMeans.toString())
+        assertFalse("Metadata with 12 means must be rejected", resShort.isValid)
+        assertTrue(resShort.error!!.contains("16 normalization means"))
+    }
+
+    @Test
+    fun testMetadataRejectsInputTensorShapeMismatch() {
+        val jsonBadShape = createValidMetadataJson()
+        jsonBadShape.getJSONObject("input_tensor").put("shape", org.json.JSONArray(listOf(1, 15)))
+        val res = FusionConfidenceModel.validateAndParseMetadataJson(jsonBadShape.toString())
+        assertFalse("Metadata with bad input shape [1, 15] must be rejected", res.isValid)
+        assertTrue(res.error!!.contains("input_tensor shape [1, 16]"))
+    }
 }

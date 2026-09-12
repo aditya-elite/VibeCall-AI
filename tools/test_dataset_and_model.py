@@ -74,7 +74,7 @@ class TestDatasetAndModel(unittest.TestCase):
                               f"Unknown condition {interval['label']} in session {session_id}")
 
     def test_02_schema_incompatibility_exclusion(self):
-        """Legacy sessions (Trials 7 & 8) must be explicitly excluded with documented reasons."""
+        """Legacy sessions (Trials 7 & 8) and unconfirmed protocol sessions (Trial 12) must be explicitly excluded."""
         self.assertTrue(os.path.exists(AUDIT_REPORT_PATH), f"Missing {AUDIT_REPORT_PATH}")
         with open(AUDIT_REPORT_PATH, "r", encoding="utf-8") as f:
             audit = json.load(f)
@@ -84,10 +84,16 @@ class TestDatasetAndModel(unittest.TestCase):
         excluded_aliases = [s["trial_alias"] for s in excluded]
         self.assertIn("Trial 7", excluded_aliases, "Trial 7 must be marked EXCLUDED")
         self.assertIn("Trial 8", excluded_aliases, "Trial 8 must be marked EXCLUDED")
+        self.assertIn("Trial 12", excluded_aliases, "Trial 12 must be marked EXCLUDED due to unconfirmed timing")
 
         for s in excluded:
             self.assertIn("reason", s)
             self.assertGreater(len(s["reason"]), 10)
+
+        # Audit report must contain warnings and session-by-class matrix
+        self.assertIn("warnings", audit)
+        self.assertGreater(len(audit["warnings"]), 0)
+        self.assertIn("session_class_distribution", audit)
 
     def test_03_training_dataset_labels_and_leakage(self):
         """Dataset must only contain target 0 and 1, no UNCERTAIN, and only compatible sessions."""
@@ -98,7 +104,7 @@ class TestDatasetAndModel(unittest.TestCase):
             rows = list(reader)
 
         training_rows = [r for r in rows if float(r["training_target"]) != -1.0]
-        self.assertGreater(len(training_rows), 500)
+        self.assertGreaterEqual(len(training_rows), 400)
 
         for r in training_rows:
             target = float(r["training_target"])
@@ -111,7 +117,7 @@ class TestDatasetAndModel(unittest.TestCase):
                 self.assertIn(cond, ["AWAY_SPEECH", "SILENCE_STILL", "SILENCE_MOVEMENT"])
 
             self.assertNotEqual(cond, "UNCERTAIN")
-            self.assertNotIn(alias, ["Trial 7", "Trial 8"])
+            self.assertNotIn(alias, ["Trial 7", "Trial 8", "Trial 12"])
 
     def test_04_exact_16_feature_order(self):
         """Verify the 16 features match the exact non-negotiable tensor specification."""

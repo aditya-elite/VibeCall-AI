@@ -102,15 +102,24 @@ The updated VibeCall app was deployed directly to the flagship **iQOO 15 (`vivo 
 
 ### RNNoise (CPU) — Verified On-Device, Real Result
 
+### RNNoise (CPU) — Verified On-Device, Primary Demo Baseline
+
 - **Background noise floor**: cut by **>110 dB** (down to the recording's digital noise floor)
 - **Speech peak level**: 100% preserved within identical peak amplitude limits of raw speech
-- Confirmed via `rnnoise_enabled: true` in real session metadata, and direct waveform analysis of actual on-device recordings — not an offline simulation.
+- Confirmed via `rnnoise_enabled: true` in real session metadata, and direct waveform analysis of actual on-device recordings — not an offline simulation. **RNNoise (`microphone_rnnoise.wav`) is the primary verified, demo-ready audio baseline.**
 
-### NPU Fusion Gate — Running on Real Hardware, Step 3 Complete
+### Step 4: Fusion-Confidence Model & SafeGainController (Experimental Prototype)
 
-- **Vocal Vibration**: Z-axis vibration elevates during phonation (up to **15.28 m/s²** peak on iQOO).
-- **On-Device NNAPI Acceleration**: Confirmed active and executing on hardware across all live trials (zero dropped frames).
-- **Honest status**: Real listening A/B tests showed earlier v3 threshold models over-suppressed speech. Step 3 feature extraction is now complete, providing synchronized 34-column `features.csv` datasets with sub-0.05 Hz pitch agreement across quiet, noise, silence, and negative control conditions for Step 4 calibration. See [docs/TEST_RESULTS_AND_NEXT_STEPS.md](https://github.com/aditya-elite/VibeCall-AI/blob/main/docs/TEST_RESULTS_AND_NEXT_STEPS.md) for the complete multi-trial analysis.
+- **16-Feature MLP Model**: Evaluates synchronized microphone audio and accelerometer features across 16 dimensions in exact tensor order with strict z-score metadata normalization.
+- **SafeGainController & Real Hangover Protection**: Modulates only the RNNoise audio path (`microphone_fusion.wav = smoothed_gain * microphone_rnnoise.wav`). Features real hangover word-ending protection preserving unity gain (`1.0`) during speech and trailing pause windows before sustained pause countdown begins.
+- **Fail-Open Policy**: Low sensor reliability ($< 0.70$), excessive movement ($> 0.50\text{ m/s}^2$), alignment lag ($> 15\text{ ms}$), model failure, or metadata corruption strictly forces unity gain (`1.0`), preventing audio muting.
+- **Leave-One-Session-Out Cross-Validation Metrics (432 Windows)**:
+  - **Accuracy**: `78.94%` | **Precision**: `67.98%` | **Recall**: `84.15%` | **F1 Score**: `0.7520` | **Overall FPR**: `24.25%`
+  - **Silence Rejection**: `SILENCE_MOVEMENT` Accuracy **100.0%** (0 false positives), `SILENCE_STILL` Accuracy **95.6%** (FPR 4.4%).
+  - **Contact Speech Recall**: `CONTACT_SPEECH` Recall **85.1%** (F1 0.919), `CONTACT_SPEECH_MOVEMENT` Recall **80.0%** (F1 0.889).
+  - **Away-from-Cheek Negative Control Status (FAILED)**: All 58 `AWAY_SPEECH` frames in Fold 2 were predicted as contact speech (mean confidence `0.965`, FPR `1.0`). The model has **not demonstrated** that it can distinguish cheek-contact speech from airborne speech on its own.
+  - **Why the Acoustic Guard is Essential**: When the user speaks away from their cheek, the deterministic acoustic guard detects microphone speech and overrides the model, forcing gain to `1.0` so speech is never attenuated.
+- **Backend Status**: `NNAPI delegate initialized — physical NPU not independently verified`. Initializing an Android NNAPI delegate requests hardware acceleration, but does not constitute independent physical proof of Qualcomm Hexagon NPU driver execution.
 
 ---
 
@@ -118,15 +127,20 @@ The updated VibeCall app was deployed directly to the flagship **iQOO 15 (`vivo 
 
 ```
 [Speaker's Mouth] ──(Airborne Acoustic Path)──> [Microphone] ──> 16 kHz Mono PCM Audio ──┐
-                                                                                         ├──> [Monotonic Sync] ──> [RNNoise (CPU) + NPU Fusion Gate] ──> Clean Outgoing Voice
-[Speaker's Cheek] ──(Bone / Contact Path)─────> [IMU Accel]  ──> ~401 Hz 3-Axis Motion ──┘
+                                                                                         ├──> [Monotonic Sync] ──> [RNNoise (CPU) × SafeGainController] ──> Clean Outgoing Voice
+[Speaker's Cheek] ──(Bone / Contact Path)─────> [IMU Accel]  ──> ~400 Hz 3-Axis Motion ──┘
 ```
 
-1. **Synchronized Capture**: Android `AudioRecord` (16 kHz mono 16-bit PCM, `UNPROCESSED` source) and `SensorManager` (400 Hz, `TYPE_ACCELEROMETER`) locked to `SystemClock.elapsedRealtimeNanos()`.
-2. **Feature Extraction & Alignment**: Aligns time axes, subtracts static 1G gravity tilt, and isolates vibration energy in the speech fundamental band (80–200 Hz).
-3. **RNNoise (CPU)**: Pretrained neural denoiser cleans the microphone signal in real time. This is the verified, demo-ready audio path.
-4. **NPU Fusion Gate**: A lightweight MLP evaluates real-time vocal cord resonance against acoustic energy, running on the Snapdragon NPU via NNAPI. Currently used for NPU hardware validation; not yet driving the final demo audio (see Verified On-Device Results above).
-5. **On-Device Target**: Qualcomm Snapdragon NPU execution (via NNAPI / QNN Direct SDK) optimized for high-performance phones such as the iQOO 15.
+1. **Synchronized Capture**: Android `AudioRecord` (16 kHz mono 16-bit PCM, `VOICE_COMMUNICATION` source) and `SensorManager` (400 Hz, `TYPE_ACCELEROMETER`) locked to `SystemClock.elapsedRealtimeNanos()`.
+2. **Step 3 Feature Extraction**: Computes 34 synchronized metrics including 4th-order Butterworth 80–185 Hz vocal bandpass, NACF autocorrelation pitch estimation, 256-point FFT spectral peak prominence, phone motion level, and alignment lag.
+3. **RNNoise Baseline (CPU)**: Pretrained neural denoiser cleans the microphone signal in real time. This is the verified, demo-ready audio baseline.
+4. **Step 4 Fusion Confidence & Gain Controller**: Evaluates 16 normalized features to output contact speech confidence, driving `SafeGainController` sample-by-sample linear ramping. Fails open to unity gain (`1.0`) under any uncertain, moving, or failed condition.
+5. **Output Audio Files**:
+   - `microphone.wav`: Raw captured audio
+   - `microphone_rnnoise.wav`: RNNoise baseline (primary verified demo audio)
+   - `microphone_fusion.wav`: Fusion output (`RNNoise * smoothed_gain`, experimental)
+   - `features.csv`: Step 3 34-column time-aligned feature telemetry
+   - `fusion_decisions.csv`: Step 4 frame-by-frame model confidence, controller states, target gains, applied gains, and diagnostic audit reasons.
 
 ---
 
@@ -140,14 +154,15 @@ The mobile companion application captures synchronized test sessions with a sing
   * `Table - silent baseline` (Sensor floor calibration)
 - **Live Hardware Telemetry**:
   * Real-time `400 Hz` sample rate monitor and frame counter.
-  * On-screen hardware status badge: `⚡ NPU Hardware Acceleration: Active (NNAPI)`.
+  * On-screen hardware status badge: `Fusion Backend: NNAPI delegate initialized — physical NPU not independently verified` (or `CPU fallback` / `Model unavailable`).
 - **Session Export**: Generates a self-contained `.zip` package containing:
   * `microphone.wav` (16 kHz 16-bit mono WAV, raw)
-  * `microphone_rnnoise.wav` (RNNoise-denoised, on-device — this is the demo audio)
-  * `gated_microphone.wav` (NPU fusion gate output, for evaluation)
+  * `microphone_rnnoise.wav` (RNNoise-denoised, on-device — primary demo audio)
+  * `microphone_fusion.wav` (Fusion-controlled audio, experimental)
+  * `features.csv` (Step 3: 34-column feature telemetry)
+  * `fusion_decisions.csv` (Step 4: Frame-by-frame confidence, controller decisions, applied gains, audit reasons)
   * `accelerometer.csv` (Monotonic hardware timestamps and 3-axis readings)
-  * `features.csv` (Step 3: Rolling 100ms 80-185Hz vocal vibration, 5Hz motion level, audio RMS, and reliability metrics)
-  * `metadata.json` (Device model, sampling rates, inference counters)
+  * `metadata.json` (Device model, sampling rates, inference counters, latency profiling)
 - **Direct Share**: Built-in Android `FileProvider` export for one-tap sharing.
 
 ### Building & Running
@@ -194,22 +209,21 @@ See [ROADMAP.md](https://github.com/aditya-elite/VibeCall-AI/blob/main/ROADMAP.m
 
 | What's Built & Verified ✅ | What's Left to Build ⏳ |
 | :--- | :--- |
-| **Synchronized Mobile Capture**: Android app recording 16 kHz audio + 400 Hz accelerometer locked to monotonic hardware clock | **Step 4 Fusion Gate Recalibration**: Train/calibrate fusion gate classifier using verified 34-column multi-trial dataset |
-| **Physical Feasibility Proven**: Accelerometer detected vocal fundamental (**Δf down to 0.00 Hz, 1.0000 agreement score**) | **Real-Time Streaming**: RNNoise currently applied to recorded sessions, not live call audio |
+| **Synchronized Mobile Capture**: Android app recording 16 kHz audio + 400 Hz accelerometer locked to monotonic hardware clock | **Multi-Session Negative Control Expansion**: Record additional away-speech sessions so model generalizes without acoustic guard |
+| **Physical Feasibility Proven**: Accelerometer detected vocal fundamental (**Δf bin alignment, 1.0000 agreement score**) | **Real-Time Streaming**: Live telephony streaming integration (*Stretch*) |
 | **Hardware Stability**: Exact 400.00 Hz sampling on ST `lsm6dsvx` across 14 live sessions on iQOO 15 | **INT8 Quantization on iQOO 15**: Benchmark latency using Qualcomm AI Engine Direct SDK (*Stretch*) |
-| **RNNoise On-Device**: Background noise floor cut by >110 dB, speech peak 100% preserved | |
+| **RNNoise On-Device (Demo Baseline)**: Background noise floor cut by >110 dB, speech peak 100% preserved | |
 | **Step 3 Feature Extraction Complete**: 4th-order 80–185 Hz Butterworth bandpass, NACF pitch estimator, 256-point FFT spectral analyzer, 34-column `features.csv` | |
-| **Multi-Trial Ground Truth Dataset**: Trials 1–14 covering quiet, loud background noise, silence baseline, and negative control | |
-| **Negative Control & Silence Validated**: Confirmed contact sensitivity (Trial 10) and zero false pitch agreements in silence (Trial 11) | |
-| **Noise Robustness Validated**: Confirmed bone conduction immunity under loud background noise (Trial 14) | |
+| **Audited Ground Truth Dataset**: 432 training windows across 5 verified sessions (Trials 9, 10, 11, 13, 14; Trial 12 excluded) | |
+| **Step 4 Fusion Model & SafeGainController**: 16-feature MLP model, strict metadata schema validation, real hangover word-ending protection, sample-by-sample linear ramping, and independent acoustic safety guard | |
 
 ---
 
 ## 🚀 Immediate Next Steps for Demo Day
 
-1. **Step 4 (Calibrate & Train Fusion Gate)**: Train and calibrate the lightweight fusion gate using the 34-column multi-trial features dataset (Trials 9–14) with validated pitch agreement and band energy.
-2. **Step 5 (A/B Test Bench)**: Feed a noisy test sentence through both pipelines and output a 3-way comparative WAV (`Noisy Raw` vs. `RNNoise-only` vs. `VibeCall Fusion`), verified by real listening tests.
-3. **Step 6 (Video & Pitch)**: Record real on-device screen footage of the app running on iQOO 15 for the hackathon presentation — showing live NPU execution and noise-robust speech enhancement.
+1. **On-Device Protocol Validation**: Execute the standardized 3-session recording protocol (Session A: away-from-cheek replication, Session B: continuous conversational speech in quiet, Session C: conversational speech in 75 dB ambient noise).
+2. **A/B Listening Test Bench**: Feed noisy test recordings through both pipelines to produce 3-way comparative playback (`Raw Microphone` vs `RNNoise Baseline` vs `VibeCall Fusion`), verifying zero clipped word endings.
+3. **Demo & Video**: Capture screen and audio recordings demonstrating that RNNoise delivers pristine speech intelligibility and that the fusion pipeline safely fails open without speech degradation.
 
 ---
 

@@ -487,4 +487,146 @@ The calibration protocol above was executed on the iQOO 15 (`20260912_145725_604
 ### Honest Scientific Evaluation & Next Steps (Trial 8 Findings)
 1. **Total Band RMS Fails to Separate Vowels from Silence**: Trial 8 demonstrated that total 80–185 Hz vibration band RMS does not reliably separate vowel speech from silence. Mean band RMS during silence baseline ($\approx 0.00903\text{ m/s}^2$), sustained "aaaa" ($\approx 0.00870\text{ m/s}^2$), and sustained "mmmm" ($\approx 0.01000\text{ m/s}^2$) overlap heavily.
 2. **Frequency Match is Promising but Preliminary**: The agreement observed during "mmmm" (mic $\approx 136.7\text{ Hz}$, accel Z $\approx 134.4\text{ Hz}$) suggests that harmonic frequency matching is significantly more specific than wideband RMS energy, but a single session does not validate it.
-3. **No Fusion Retraining or Gain Adjustments Yet**: Fusion model retraining and fusion gain changes remain deferred until repeated multi-trial calibrations validate reproducible audio–vibration pitch agreement across diverse phoneme classes.
+
+---
+
+## 7. Step 4 Empirical Results: Fusion-Confidence Model, Safe Gain Controller & Audit
+
+**Date**: September 12, 2026  
+**Implementation**: Feature-grounded MLP model (16 inputs) + `SafeGainController` with real hangover word-ending protection.  
+**Hardware Verified**: iQOO 15 (`vivo I2501`), Snapdragon 8 Elite, STMicroelectronics `lsm6dsvx` Accelerometer (400 Hz).
+
+### 7.1 Dataset Audit & Protocol Corrections
+
+A rigorous dataset audit was conducted across all available sessions:
+1. **Trial 11 Protocol Correction**: Alternating stationary silence and deliberate phone movement without speech:
+   - 0.0–3.0 s: Still silence (`SILENCE_STILL`, 46 frames mapped)
+   - 3.5–6.8 s: Handling motion without speech (`SILENCE_MOVEMENT`, 25 frames mapped)
+   - 7.4–9.6 s: Still silence (`SILENCE_STILL`)
+   - 10.2–13.6 s: Handling motion without speech (`SILENCE_MOVEMENT`, 26 frames mapped)
+   - 14.2–16.5 s: Still silence (`SILENCE_STILL`)
+   - Transition buffers (<0.5s around boundaries) explicitly labeled `UNCERTAIN` and excluded from training.
+2. **Trial 13 Moving Phonation Correction**: The verified continuous moving-speech interval (9.6–13.5 s) was labeled `CONTACT_SPEECH_MOVEMENT` (30 frames mapped).
+3. **Session Exclusions**:
+   - **Trial 12**: Protocol timing and phonation intervals could not be independently confirmed against standard protocol. Formally excluded (`is_compatible: false`) to prevent label contamination.
+   - **Trials 7 & 8**: Legacy 10-column schema (missing 34-column Step 3 pitch features). Formally excluded.
+   - **Trials 170312, 170321, 172038, 172055**: Short exploratory/intermediate test clips (<10s). Formally excluded.
+4. **Dataset Summary**:
+   - Total extracted frames: 677
+   - Training frames mapped: 432 (164 positive, 268 negative)
+   - Excluded uncertain/transition frames: 245
+   - Included sessions: Trials 9, 10, 11, 13, 14 (5 sessions)
+
+### 7.2 Leave-One-Session-Out (LOSO) Cross-Validation Results
+
+To prevent data leakage across windows of the same recording, complete Leave-One-Session-Out (LOSO) cross-validation was evaluated across all 5 included sessions (432 total test predictions):
+
+#### Per-Class Performance Breakdown:
+| Class Name | Target | Samples | Mean Conf | %Conf $\ge$ 0.70 | %Conf $\le$ 0.20 | Precision | Recall | F1 Score | False Positive Rate | Accuracy |
+| :--- | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: |
+| **`AWAY_SPEECH`** | 0.0 | **58** | **0.965** | 98.3% | 0.0% | 0.0% | 0.0% | 0.0% | **1.000 (100%)** | **0.0% (FAILED)** |
+| **`SILENCE_STILL`** | 0.0 | 159 | 0.042 | 3.8% | 95.0% | — | — | — | 0.044 (4.4%) | 95.6% |
+| **`SILENCE_MOVEMENT`** | 0.0 | 51 | 0.002 | 0.0% | 100.0% | — | — | — | 0.000 (0.0%) | 100.0% |
+| **`CONTACT_SPEECH`** | 1.0 | 134 | 0.807 | 77.6% | 8.2% | 100.0% | 85.1% | 0.919 | 0.000 (0.0%) | 85.1% |
+| **`CONTACT_SPEECH_MOVEMENT`** | 1.0 | 30 | 0.726 | 73.3% | 10.0% | 100.0% | 80.0% | 0.889 | 0.000 (0.0%) | 80.0% |
+
+#### Overall Cross-Validation Metrics (Threshold = 0.50):
+- **Accuracy**: `78.94%` (341 / 432 correct)
+- **Precision**: `67.98%` (138 / 203 predicted positive)
+- **Recall**: `84.15%` (138 / 164 true positive)
+- **F1 Score**: `0.7520`
+- **False Positive Rate (Overall)**: `24.25%` (65 / 268)
+- **Confusion Matrix**:
+  - True Positive (TP): **138**
+  - False Positive (FP): **65** (58 from `AWAY_SPEECH`, 7 from `SILENCE_STILL`)
+  - False Negative (FN): **26**
+  - True Negative (TN): **203**
+
+#### Per-Session Cross-Validation Summary:
+| Fold | Validation Session | Alias | Val Samples | TP | FP | FN | TN | Acc | Prec | Recall | F1 | FPR |
+| :---: | :--- | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: |
+| **Fold 1** | `20260912_164416_129` | Trial 9 | 85 | 45 | 5 | 2 | 33 | 91.8% | 90.0% | 95.7% | 0.928 | 13.2% |
+| **Fold 2** | `20260912_165406_477` | Trial 10 | 84 | 0 | **58** | 0 | 26 | **31.0%** | 0.0% | 0.0% | 0.000 | **69.0%** |
+| **Fold 3** | `20260912_170357_939` | Trial 11 | 97 | 0 | 0 | 0 | 97 | **100.0%** | — | — | — | **0.0%** |
+| **Fold 4** | `20260912_172116_220` | Trial 13 | 84 | 52 | 0 | 6 | 26 | **92.9%** | 100.0% | 89.7% | 0.945 | **0.0%** |
+| **Fold 5** | `20260912_173426_668` | Trial 14 | 82 | 41 | 2 | 18 | 21 | **75.6%** | 95.3% | 69.5% | 0.804 | 8.7% |
+
+### 7.3 Critical Finding: Away-From-Cheek Negative Control Failure
+
+> [!WARNING]
+> **The fusion model FAILS the away-from-cheek negative control**:
+> - All 58 `AWAY_SPEECH` frames in Fold 2 were predicted as contact speech.
+> - Mean predicted confidence was `0.965`.
+> - Away-speech false positive rate was `1.000 (100%)`.
+> - **Mathematical Root Cause**: Trial 10 is the only away-from-cheek recording in the dataset. In Leave-One-Session-Out validation, Fold 2 trains on Trials 9, 11, 13, and 14. In that training set, every single window with audible acoustic speech has label `CONTACT_SPEECH` ($y=1$). There are **zero negative speech samples** in the training fold. Consequently, the model learned that acoustic pitch + mic energy implies contact speech.
+> - **Scientific Implication**: The model has **not demonstrated** that it can distinguish cheek-contact speech from airborne speech on its own. The fusion model must remain classified as **strictly experimental**.
+
+### 7.4 Why the Independent Acoustic Safety Guard Is Essential
+
+Because the ML model alone cannot yet discriminate airborne speech from contact speech, the **deterministic acoustic-speech safety guard** in `SafeGainController` is critical:
+- When the user speaks away from their cheek, `microphone_log_energy_db` and `microphone_pitch_reliable` indicate audible speech.
+- The acoustic guard **overrides** model inference and forces audio gain to `1.0`.
+- Therefore, away-from-cheek speech is **never attenuated**, preventing caller muting despite the model's false-positive prediction.
+
+### 7.5 Real Hangover Protection Implementation
+
+In `SafeGainController.kt`:
+1. **Hangover Trigger**: Whenever acoustic speech or confident contact speech ($\ge 0.70$) is detected:
+   - `hangoverCounter` is set to `hangoverWindows` (default: 2 windows $\approx 256\text{ ms}$).
+   - `consecutivePauseCount` is reset to 0.
+2. **Word-Ending Protection**: During subsequent apparent pause windows (acoustic energy low, model confidence $\le 0.20$):
+   - If `hangoverCounter > 0`, the controller remains in `State.HANGOVER`, decrements `hangoverCounter`, and returns target gain `1.0`.
+   - `consecutivePauseCount` remains 0 throughout the hangover.
+3. **Confirmed Pause Count**: Only after `hangoverCounter == 0`, `consecutivePauseCount` begins counting:
+   - Window 1: Gain 1.0 (`PAUSE_PENDING`)
+   - Window 2: Gain 1.0 (`PAUSE_PENDING`)
+   - Window 3+: Gain `0.50` (`ATTENUATING`)
+4. **Guard Reset**: Any interruption (acoustic speech, motion spike $> 0.50\text{ m/s}^2$, lag $> 15\text{ ms}$, sensor reliability $< 0.70$, uncertainty, or model error) immediately resets `consecutivePauseCount = 0`.
+5. **Rapid Slew Recovery**: Speech return restores gain from 0.50 to 1.0 within 1 frame ($\le 50\text{ ms}$) with sample-by-sample linear interpolation eliminating audio clicks.
+
+### 7.6 Strict Metadata & Model Safety Validation
+
+In `FusionConfidenceModel.kt`:
+- **Validation Invariants**: Requires exactly 16 feature names in documented order, 16 finite means, 16 positive finite standard deviations ($> 0$), input tensor shape `[1, 16]`, and output tensor shape `[1, 1]`.
+- **Fail-Open Policy**: If metadata is missing, corrupted, or violates schema, the model is marked unavailable (`modelReliable = false`), and fallback neutral values are **never** used. `SafeGainController` forces unity gain `1.0`, preserving RNNoise audio unchanged.
+- **Truthful Backend Reporting**:
+  - `NNAPI delegate initialized — physical NPU not independently verified` (when NNAPI delegate initializes successfully)
+  - `CPU fallback` (when running on standard CPU interpreter)
+  - `Model unavailable` (when metadata or model validation fails)
+  - "NPU active" is never claimed without device-specific physical driver proof.
+
+### 7.7 Verification Test Summary
+
+| Test Suite | Commands Executed | Tests | Result |
+| :--- | :--- | :---: | :---: |
+| **Python Dataset & Model Tests** | `tools/.venv/Scripts/python.exe tools/test_dataset_and_model.py` | 6 | **6 Passed (100%)** |
+| **Android JVM Unit Tests** | `gradlew.bat testDebugUnitTest --rerun-tasks` | 46 | **46 Passed (100%)** |
+| **Gradle Debug APK Build** | `gradlew.bat assembleDebug` | 34 tasks | **BUILD SUCCESSFUL** |
+| **Live Device Installation** | `adb install -r app-debug.apk` | 1 | **Streamed Install Success** |
+| **Live Telemetry & Init** | `adb logcat | Select-String "FusionConfidenceModel"` | — | **Verified NNAPI unverified init** |
+
+---
+
+## 8. Next Recording Protocol Needed for On-Device Validation
+
+To resolve the away-speech negative control limitation and validate multi-condition performance:
+
+### Protocol: Multi-Session Standardized Negative Control & Speech Calibration
+Record 3 new standardized sessions on the iQOO 15:
+
+1. **Session A: Dedicated Away-From-Cheek Negative Control (Replication)**:
+   - 0–3s: Phone held 5 cm away from face, silence baseline
+   - 3–8s: Phonation ("aaaa") spoken loudly with phone held 5 cm away
+   - 8–11s: Silence away from face
+   - 11–16s: Phonation ("mmmm") spoken loudly with phone held 5 cm away
+   - 16–19s: Silence away from face
+   - *Goal*: Provide a second away-from-cheek session so cross-validation folds retain negative speech samples.
+
+2. **Session B: Continuous Natural Conversational Speech on Cheek**:
+   - Read a phonetically balanced 15-second passage (e.g., Harvard sentence list) with phone firmly against cheek in a quiet room.
+   - *Goal*: Evaluate natural sentence endings, unvoiced consonants ('s', 't', 'p'), and verify that hangover protection preserves word endings.
+
+3. **Session C: Conversational Speech in Severe Ambient Noise**:
+   - Same passage read against cheek while playing 75 dB traffic/cafeteria noise via external speaker.
+   - *Goal*: A/B comparative listening across `microphone.wav`, `microphone_rnnoise.wav`, and `microphone_fusion.wav`.
+

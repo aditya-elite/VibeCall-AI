@@ -129,8 +129,13 @@ def compute_metrics(y_true, y_pred, threshold=0.5):
     }
 
 
-def run_session_loso_evaluation(X_raw, targets, session_ids, labels):
+def run_session_loso_evaluation(X_raw, targets, session_ids, labels, valid_rows):
     unique_sessions = sorted(list(set(session_ids)))
+    # Map session ID to trial alias
+    session_aliases = {}
+    for r in valid_rows:
+        session_aliases[r["session_id"]] = r.get("trial_alias", r["session_id"])
+
     print(f"\n--- Running Leave-One-Session-Out Cross-Validation ({len(unique_sessions)} Folds) ---")
 
     fold_reports = []
@@ -145,6 +150,8 @@ def run_session_loso_evaluation(X_raw, targets, session_ids, labels):
         X_train_raw, y_train = X_raw[train_mask], targets[train_mask]
         X_val_raw, y_val = X_raw[val_mask], targets[val_mask]
         labels_val = [labels[i] for i in range(len(labels)) if val_mask[i]]
+
+        alias = session_aliases.get(val_session, val_session)
 
         # Normalization derived strictly from training fold
         means, stds = compute_normalization(X_train_raw)
@@ -168,10 +175,19 @@ def run_session_loso_evaluation(X_raw, targets, session_ids, labels):
         y_val_pred = model.predict(X_val_norm, verbose=0).flatten()
 
         metrics = compute_metrics(y_val, y_val_pred, threshold=0.5)
+
+        # Per-class counts within this session
+        session_class_counts = {}
+        for lbl in labels_val:
+            session_class_counts[lbl] = session_class_counts.get(lbl, 0) + 1
+
         fold_reports.append({
+            "fold_index": fold_idx + 1,
             "val_session": val_session,
+            "trial_alias": alias,
             "train_samples": int(len(y_train)),
             "val_samples": int(len(y_val)),
+            "session_class_counts": session_class_counts,
             "metrics_at_0_5": metrics,
         })
 
@@ -179,8 +195,8 @@ def run_session_loso_evaluation(X_raw, targets, session_ids, labels):
         all_val_trues.extend(y_val.tolist())
         all_val_labels.extend(labels_val)
 
-        print(f"  Fold {fold_idx+1}/{len(unique_sessions)} ({val_session[:25]}...): "
-              f"Acc={metrics['accuracy']:.3f}, P={metrics['precision']:.3f}, R={metrics['recall']:.3f}, F1={metrics['f1']:.3f}")
+        print(f"  Fold {fold_idx+1}/{len(unique_sessions)} [{alias}] ({val_session[:22]}...): "
+              f"Acc={metrics['accuracy']:.3f}, P={metrics['precision']:.3f}, R={metrics['recall']:.3f}, F1={metrics['f1']:.3f}, FPR={metrics['false_positive_rate']:.3f}")
 
     all_val_preds = np.array(all_val_preds)
     all_val_trues = np.array(all_val_trues)
@@ -192,7 +208,7 @@ def run_session_loso_evaluation(X_raw, targets, session_ids, labels):
     print(f"  Recall:    {overall_metrics['recall']:.4f}")
     print(f"  F1 Score:  {overall_metrics['f1']:.4f}")
     print(f"  FPR:       {overall_metrics['false_positive_rate']:.4f}")
-    print(f"  Matrix: TP={overall_metrics['tp']}, FP={overall_metrics['fp']}, FN={overall_metrics['fn']}, TN={overall_metrics['tn']}")
+    print(f"  Confusion Matrix: TP={overall_metrics['tp']}, FP={overall_metrics['fp']}, FN={overall_metrics['fn']}, TN={overall_metrics['tn']}")
 
     # Breakdown by condition
     condition_breakdown = {}
@@ -203,16 +219,38 @@ def run_session_loso_evaluation(X_raw, targets, session_ids, labels):
         mean_conf = float(np.mean(sub_pred))
         p_above_70 = float(np.mean(sub_pred >= 0.70))
         p_below_20 = float(np.mean(sub_pred <= 0.20))
+        cond_metrics = compute_metrics(sub_true, sub_pred, threshold=0.5)
         condition_breakdown[cond] = {
             "samples": int(len(sub_true)),
             "mean_confidence": mean_conf,
             "pct_conf_ge_0_70": p_above_70,
             "pct_conf_le_0_20": p_below_20,
-            "metrics": compute_metrics(sub_true, sub_pred, threshold=0.5),
+            "metrics": cond_metrics,
         }
-        print(f"  Condition '{cond:22s}' (N={len(sub_true):3d}): Mean Conf={mean_conf:.3f}, %Conf>=0.70={p_above_70*100:.1f}%, %Conf<=0.20={p_below_20*100:.1f}%")
+        print(f"  Class '{cond:24s}' (N={len(sub_true):3d}): Mean Conf={mean_conf:.3f}, "
+              f"%Conf>=0.70={p_above_70*100:.1f}%, %Conf<=0.20={p_below_20*100:.1f}%, "
+              f"P={cond_metrics['precision']:.3f}, R={cond_metrics['recall']:.3f}, FPR={cond_metrics['false_positive_rate']:.3f}")
 
-    return fold_reports, overall_metrics, condition_breakdown
+    # Negative control explicit evaluation
+    away_metrics = condition_breakdown.get("AWAY_SPEECH", {})
+    away_fpr = away_metrics.get("metrics", {}).get("false_positive_rate", 1.0)
+    away_mean_conf = away_metrics.get("mean_confidence", 0.0)
+    away_samples = away_metrics.get("samples", 0)
+    away_eval = {
+        "status": "FAILED" if away_fpr > 0.05 else "PASSED",
+        "sample_count": away_samples,
+        "mean_confidence": away_mean_conf,
+        "false_positive_rate": away_fpr,
+        "finding": (
+            f"The fusion model FAILS the away-from-cheek negative control: all {away_samples} AWAY_SPEECH frames "
+            f"in LOSO cross-validation were classified as contact speech (mean confidence = {away_mean_conf:.3f}, "
+            f"FPR = {away_fpr:.4f}). The model has not demonstrated that it can distinguish cheek-contact speech from airborne speech. "
+            f"Audio safety relies strictly on the independent acoustic guard in SafeGainController."
+        )
+    }
+    print(f"\n[NEGATIVE CONTROL AUDIT]: {away_eval['finding']}")
+
+    return fold_reports, overall_metrics, condition_breakdown, away_eval
 
 
 def train_and_export_production_model(X_raw, targets, out_tflite_path, out_meta_path):
@@ -280,7 +318,7 @@ def train_and_export_production_model(X_raw, targets, out_tflite_path, out_meta_
         "model_name": "fusion_confidence_model.tflite",
         "format_version": "1.0.0",
         "description": "VibeCall-AI Step 4 MLP fusion-confidence model for Outgoing Speech Enhancement",
-        "scientific_disclaimer": "Trained on single-speaker iQOO 15 hardware dataset. Treat as experimental prototype; do not claim universal generalization.",
+        "scientific_disclaimer": "Trained on single-speaker iQOO 15 hardware dataset. Fails away-from-cheek negative control in leave-one-session-out validation (FPR=1.0 on airborne speech). Treat strictly as experimental prototype; contact speech detection is NOT validated for off-cheek discrimination without independent acoustic guarding.",
         "input_tensor": {
             "name": "features_input",
             "shape": [1, 16],
@@ -347,8 +385,8 @@ if __name__ == "__main__":
     print(f"Loaded {len(targets)} samples across {len(set(session_ids))} unique sessions.")
 
     # 1. Cross-Validation
-    fold_reports, overall_metrics, condition_breakdown = run_session_loso_evaluation(
-        X_raw, targets, session_ids, labels
+    fold_reports, overall_metrics, condition_breakdown, away_eval = run_session_loso_evaluation(
+        X_raw, targets, session_ids, labels, valid_rows
     )
 
     # 2. Production Model Training and Export
@@ -361,6 +399,7 @@ if __name__ == "__main__":
         "sessions": sorted(list(set(session_ids))),
         "cross_validation": {
             "overall_metrics": overall_metrics,
+            "away_speech_negative_control": away_eval,
             "condition_breakdown": condition_breakdown,
             "folds": fold_reports,
         },

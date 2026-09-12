@@ -67,7 +67,7 @@ data class TelemetryData(
     val fusionConfidence: Float = 0.5f,
     val appliedGain: Float = 1.0f,
     val fusionControllerState: String = "PRESERVE",
-    val fusionBackendStatus: String = "NNAPI requested/active"
+    val fusionBackendStatus: String = "Model uninitialized"
 )
 
 data class FusionDecisionRow(
@@ -889,7 +889,7 @@ class SessionRecorder(
             put("test_label", sessionLabel)
             put("npu_fusion_enabled", true)
             put("npu_model_name", "fusion_gate_model.tflite")
-            put("npu_delegate", "NNAPI")
+            put("npu_delegate", "NNAPI delegate initialized — physical NPU not independently verified")
             put("fusion_inference_count", trustInferenceCount)
             put("average_trust_value", averageTrust)
             put("gated_audio_file", if (gatedWavFile?.exists() == true) "gated_microphone.wav" else JSONObject.NULL)

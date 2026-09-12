@@ -117,12 +117,21 @@ class SafeGainController(
         }
 
         // 5. Candidate Pause: Acoustic pause confirmed AND model confidence <= 0.20
+        // If hangover counter is active, preserve unity gain and decrement hangover
+        if (hangoverCounter > 0) {
+            val remaining = hangoverCounter
+            hangoverCounter--
+            consecutivePauseCount = 0
+            return 1.0f to "Hangover active: protecting word ending ($remaining remaining)"
+        }
+
+        // Only after hangover has fully elapsed, count consecutive pause windows
         consecutivePauseCount++
         if (consecutivePauseCount < minConsecutivePauseWindows) {
             return 1.0f to "Pause pending: window $consecutivePauseCount of $minConsecutivePauseWindows required"
         }
 
-        return minimumGain to "Confirmed sustained pause ($consecutivePauseCount consecutive windows, confidence ${String.format("%.2f", modelConfidence)})"
+        return minimumGain to "Confirmed sustained pause ($consecutivePauseCount consecutive windows, confidence ${String.format(java.util.Locale.US, "%.2f", modelConfidence)})"
     }
 
     /**
@@ -145,15 +154,24 @@ class SafeGainController(
         val boundedTarget = targetGain.coerceIn(minimumGain, 1.0f)
         val startGain = currentSmoothedGain
 
-        // Determine next end gain based on slew rate limits
-        val endGain = if (boundedTarget > startGain) {
-            currentState = State.RESTORE_RAMP
-            min(boundedTarget, startGain + maxRestoreStepPerFrame)
-        } else if (boundedTarget < startGain) {
+        // Determine next end gain based on slew rate limits and update state
+        val isRestoring = boundedTarget > startGain + 1e-4f
+        val isAttenuating = boundedTarget < startGain - 1e-4f
+
+        val endGain = if (isRestoring) {
+            val nextGain = min(boundedTarget, startGain + maxRestoreStepPerFrame)
+            currentState = if (nextGain >= 0.999f) State.PRESERVE else State.RESTORE_RAMP
+            nextGain
+        } else if (isAttenuating) {
             currentState = State.ATTENUATING
             max(boundedTarget, startGain - maxAttenuationStepPerFrame)
         } else {
-            currentState = if (boundedTarget < 0.99f) State.ATTENUATING else State.PRESERVE
+            currentState = when {
+                boundedTarget < 0.99f -> State.ATTENUATING
+                reason.startsWith("Hangover active") -> State.HANGOVER
+                reason.startsWith("Pause pending") -> State.PAUSE_PENDING
+                else -> State.PRESERVE
+            }
             boundedTarget
         }
 
@@ -188,6 +206,8 @@ class SafeGainController(
 
     fun getCurrentGain(): Float = currentSmoothedGain
     fun getState(): State = currentState
+    fun getHangoverCounter(): Int = hangoverCounter
+    fun getConsecutivePauseCount(): Int = consecutivePauseCount
 
     companion object {
         const val DEFAULT_MIN_GAIN = 0.50f

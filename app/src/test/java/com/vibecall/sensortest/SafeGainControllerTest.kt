@@ -222,4 +222,163 @@ class SafeGainControllerTest {
         }
         assertEquals(0.50f, controller.getCurrentGain(), 0.001f)
     }
+
+    @Test
+    fun testHangoverDelaysPauseCountingAndProtectsWordEndings() {
+        // Step 1: Active speech occurs
+        val (gainSpeech, _) = controller.evaluateTargetGain(
+            microphoneLogEnergyDb = -25.0f,
+            microphonePitchReliable = 1.0f,
+            modelConfidence = 0.95f,
+            modelReliable = true,
+            sensorReliability = 1.0f,
+            phoneMotionLevel = 0.02f,
+            sensorAlignmentLagMs = 1.0f
+        )
+        assertEquals(1.0f, gainSpeech, 0.001f)
+        assertEquals(2, controller.getHangoverCounter())
+        assertEquals(0, controller.getConsecutivePauseCount())
+
+        // Step 2: Speech suddenly drops (apparent pause window 1) - quiet consonant or word ending
+        val (gainHangover1, reason1) = controller.evaluateTargetGain(
+            microphoneLogEnergyDb = -65.0f,
+            microphonePitchReliable = 0.0f,
+            modelConfidence = 0.08f,
+            modelReliable = true,
+            sensorReliability = 1.0f,
+            phoneMotionLevel = 0.02f,
+            sensorAlignmentLagMs = 1.0f
+        )
+        assertEquals("Hangover window 1 must preserve unity gain for trailing word endings", 1.0f, gainHangover1, 0.001f)
+        assertTrue(reason1.contains("Hangover active"))
+        assertEquals(1, controller.getHangoverCounter())
+        assertEquals(0, controller.getConsecutivePauseCount())
+
+        // Step 3: Apparent pause window 2
+        val (gainHangover2, reason2) = controller.evaluateTargetGain(
+            microphoneLogEnergyDb = -68.0f,
+            microphonePitchReliable = 0.0f,
+            modelConfidence = 0.05f,
+            modelReliable = true,
+            sensorReliability = 1.0f,
+            phoneMotionLevel = 0.02f,
+            sensorAlignmentLagMs = 1.0f
+        )
+        assertEquals("Hangover window 2 must preserve unity gain", 1.0f, gainHangover2, 0.001f)
+        assertTrue(reason2.contains("Hangover active"))
+        assertEquals(0, controller.getHangoverCounter())
+        assertEquals(0, controller.getConsecutivePauseCount())
+
+        // Step 4: Hangover has now reached 0; pause counter begins counting window 1
+        val (gainPause1, reasonP1) = controller.evaluateTargetGain(
+            microphoneLogEnergyDb = -70.0f,
+            microphonePitchReliable = 0.0f,
+            modelConfidence = 0.04f,
+            modelReliable = true,
+            sensorReliability = 1.0f,
+            phoneMotionLevel = 0.02f,
+            sensorAlignmentLagMs = 1.0f
+        )
+        assertEquals("Pause pending window 1 must still preserve unity gain", 1.0f, gainPause1, 0.001f)
+        assertTrue(reasonP1.contains("window 1 of 3 required"))
+        assertEquals(1, controller.getConsecutivePauseCount())
+
+        // Step 5: Pause window 2
+        val (gainPause2, reasonP2) = controller.evaluateTargetGain(
+            microphoneLogEnergyDb = -70.0f,
+            microphonePitchReliable = 0.0f,
+            modelConfidence = 0.04f,
+            modelReliable = true,
+            sensorReliability = 1.0f,
+            phoneMotionLevel = 0.02f,
+            sensorAlignmentLagMs = 1.0f
+        )
+        assertEquals("Pause pending window 2 must still preserve unity gain", 1.0f, gainPause2, 0.001f)
+        assertTrue(reasonP2.contains("window 2 of 3 required"))
+        assertEquals(2, controller.getConsecutivePauseCount())
+
+        // Step 6: Pause window 3 reaches minimum gain floor
+        val (gainPause3, reasonP3) = controller.evaluateTargetGain(
+            microphoneLogEnergyDb = -72.0f,
+            microphonePitchReliable = 0.0f,
+            modelConfidence = 0.03f,
+            modelReliable = true,
+            sensorReliability = 1.0f,
+            phoneMotionLevel = 0.02f,
+            sensorAlignmentLagMs = 1.0f
+        )
+        assertEquals("Pause window 3 confirms sustained pause and outputs minimum gain", 0.50f, gainPause3, 0.001f)
+        assertTrue(reasonP3.contains("Confirmed sustained pause"))
+        assertEquals(3, controller.getConsecutivePauseCount())
+    }
+
+    @Test
+    fun testUncertainConfidencePreservesUnityAndResetsPauseCount() {
+        // Build up 2 pause windows
+        controller.evaluateTargetGain(-70.0f, 0.0f, 0.05f, true, 1.0f, 0.02f, 1.0f)
+        controller.evaluateTargetGain(-70.0f, 0.0f, 0.05f, true, 1.0f, 0.02f, 1.0f)
+        assertEquals(2, controller.getConsecutivePauseCount())
+
+        // Uncertain confidence window (0.45 is in [0.20, 0.70])
+        val (gain, reason) = controller.evaluateTargetGain(-70.0f, 0.0f, 0.45f, true, 1.0f, 0.02f, 1.0f)
+        assertEquals("Uncertain confidence must fail safe to unity gain", 1.0f, gain, 0.001f)
+        assertTrue(reason.contains("Confidence uncertain"))
+        assertEquals("Pause counter must be reset to 0 on uncertainty", 0, controller.getConsecutivePauseCount())
+    }
+
+    @Test
+    fun testMotionSpikeResetsPauseCount() {
+        // Build up 2 pause windows
+        controller.evaluateTargetGain(-70.0f, 0.0f, 0.05f, true, 1.0f, 0.02f, 1.0f)
+        controller.evaluateTargetGain(-70.0f, 0.0f, 0.05f, true, 1.0f, 0.02f, 1.0f)
+        assertEquals(2, controller.getConsecutivePauseCount())
+
+        // Motion spike > 0.50 m/s²
+        val (gain, reason) = controller.evaluateTargetGain(-70.0f, 0.0f, 0.05f, true, 1.0f, 0.85f, 1.0f)
+        assertEquals(1.0f, gain, 0.001f)
+        assertTrue(reason.contains("Motion guard"))
+        assertEquals("Pause counter must be reset to 0 on motion", 0, controller.getConsecutivePauseCount())
+    }
+
+    @Test
+    fun testAlignmentLagSpikeResetsPauseCount() {
+        // Build up 2 pause windows
+        controller.evaluateTargetGain(-70.0f, 0.0f, 0.05f, true, 1.0f, 0.02f, 1.0f)
+        controller.evaluateTargetGain(-70.0f, 0.0f, 0.05f, true, 1.0f, 0.02f, 1.0f)
+        assertEquals(2, controller.getConsecutivePauseCount())
+
+        // Alignment lag > 15.0 ms
+        val (gain, reason) = controller.evaluateTargetGain(-70.0f, 0.0f, 0.05f, true, 1.0f, 0.02f, 25.0f)
+        assertEquals(1.0f, gain, 0.001f)
+        assertTrue(reason.contains("Lag guard"))
+        assertEquals("Pause counter must be reset to 0 on lag", 0, controller.getConsecutivePauseCount())
+    }
+
+    @Test
+    fun testSensorReliabilityDropResetsPauseCount() {
+        // Build up 2 pause windows
+        controller.evaluateTargetGain(-70.0f, 0.0f, 0.05f, true, 1.0f, 0.02f, 1.0f)
+        controller.evaluateTargetGain(-70.0f, 0.0f, 0.05f, true, 1.0f, 0.02f, 1.0f)
+        assertEquals(2, controller.getConsecutivePauseCount())
+
+        // Sensor reliability < 0.70
+        val (gain, reason) = controller.evaluateTargetGain(-70.0f, 0.0f, 0.05f, true, 0.50f, 0.02f, 1.0f)
+        assertEquals(1.0f, gain, 0.001f)
+        assertTrue(reason.contains("Sensor guard"))
+        assertEquals("Pause counter must be reset to 0 on unreliable sensors", 0, controller.getConsecutivePauseCount())
+    }
+
+    @Test
+    fun testModelFailureResetsPauseCount() {
+        // Build up 2 pause windows
+        controller.evaluateTargetGain(-70.0f, 0.0f, 0.05f, true, 1.0f, 0.02f, 1.0f)
+        controller.evaluateTargetGain(-70.0f, 0.0f, 0.05f, true, 1.0f, 0.02f, 1.0f)
+        assertEquals(2, controller.getConsecutivePauseCount())
+
+        // Model failure
+        val (gain, reason) = controller.evaluateTargetGain(-70.0f, 0.0f, 0.05f, false, 1.0f, 0.02f, 1.0f)
+        assertEquals(1.0f, gain, 0.001f)
+        assertTrue(reason.contains("Model guard"))
+        assertEquals("Pause counter must be reset to 0 on model failure", 0, controller.getConsecutivePauseCount())
+    }
 }

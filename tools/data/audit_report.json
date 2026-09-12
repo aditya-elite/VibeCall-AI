@@ -1,27 +1,79 @@
 {
   "manifest_file": "tools/dataset_manifest.json",
   "total_sessions_in_manifest": 12,
-  "included_sessions_count": 6,
-  "excluded_sessions_count": 6,
-  "total_windows_extracted": 821,
-  "training_windows_count": 549,
-  "excluded_uncertain_windows": 272,
+  "included_sessions_count": 5,
+  "excluded_sessions_count": 7,
+  "total_windows_extracted": 677,
+  "training_windows_count": 432,
+  "excluded_uncertain_windows": 245,
   "label_distribution": {
-    "CONTACT_SPEECH": 220,
+    "CONTACT_SPEECH": 134,
     "AWAY_SPEECH": 58,
-    "SILENCE_STILL": 262,
-    "SILENCE_MOVEMENT": 1,
-    "CONTACT_SPEECH_MOVEMENT": 8,
-    "UNCERTAIN": 272
+    "SILENCE_STILL": 159,
+    "SILENCE_MOVEMENT": 51,
+    "CONTACT_SPEECH_MOVEMENT": 30,
+    "UNCERTAIN": 245
+  },
+  "training_class_distribution": {
+    "SILENCE_STILL": 159,
+    "CONTACT_SPEECH": 134,
+    "AWAY_SPEECH": 58,
+    "SILENCE_MOVEMENT": 51,
+    "CONTACT_SPEECH_MOVEMENT": 30
   },
   "session_training_counts": {
     "20260912_164416_129_cheek_speaking_in_quiet": 85,
     "20260912_165406_477_cheek_speaking_in_quiet": 84,
-    "20260912_170357_939_cheek_speaking_in_quiet": 117,
-    "20260912_172000_955_cheek_speaking_in_quiet": 88,
-    "20260912_172116_220_cheek_speaking_in_quiet": 93,
+    "20260912_170357_939_cheek_speaking_in_quiet": 97,
+    "20260912_172116_220_cheek_speaking_in_quiet": 84,
     "20260912_173426_668_cheek_speaking_with_background_noise": 82
   },
+  "session_class_distribution": {
+    "Trial 9": {
+      "CONTACT_SPEECH": 47,
+      "AWAY_SPEECH": 0,
+      "SILENCE_STILL": 38,
+      "SILENCE_MOVEMENT": 0,
+      "CONTACT_SPEECH_MOVEMENT": 0,
+      "UNCERTAIN": 53
+    },
+    "Trial 10": {
+      "CONTACT_SPEECH": 0,
+      "AWAY_SPEECH": 58,
+      "SILENCE_STILL": 26,
+      "SILENCE_MOVEMENT": 0,
+      "CONTACT_SPEECH_MOVEMENT": 0,
+      "UNCERTAIN": 35
+    },
+    "Trial 11": {
+      "CONTACT_SPEECH": 0,
+      "AWAY_SPEECH": 0,
+      "SILENCE_STILL": 46,
+      "SILENCE_MOVEMENT": 51,
+      "CONTACT_SPEECH_MOVEMENT": 0,
+      "UNCERTAIN": 44
+    },
+    "Trial 13": {
+      "CONTACT_SPEECH": 28,
+      "AWAY_SPEECH": 0,
+      "SILENCE_STILL": 26,
+      "SILENCE_MOVEMENT": 0,
+      "CONTACT_SPEECH_MOVEMENT": 30,
+      "UNCERTAIN": 51
+    },
+    "Trial 14": {
+      "CONTACT_SPEECH": 59,
+      "AWAY_SPEECH": 0,
+      "SILENCE_STILL": 23,
+      "SILENCE_MOVEMENT": 0,
+      "CONTACT_SPEECH_MOVEMENT": 0,
+      "UNCERTAIN": 62
+    }
+  },
+  "warnings": [
+    "WARNING: Class 'CONTACT_SPEECH_MOVEMENT' has only 30 training samples (< 50 threshold). Statistical power and generalizability are constrained.",
+    "WARNING: Negative control class 'AWAY_SPEECH' is represented by only 1 session(s) (['Trial 10']). In Leave-One-Session-Out evaluation, models trained without this session have 0 negative speech samples, causing 100% false-positive rate on airborne speech."
+  ],
   "session_audit_details": [
     {
       "session_id": "20260912_145725_604_cheek_speaking_in_quiet",
@@ -59,25 +111,25 @@
       "session_id": "20260912_170357_939_cheek_speaking_in_quiet",
       "trial_alias": "Trial 11",
       "status": "INCLUDED",
-      "reason": "Processed 141 frames, 117 training frames mapped",
+      "reason": "Processed 141 frames, 97 training frames mapped",
       "total_rows": 141,
-      "included_rows": 117
+      "included_rows": 97
     },
     {
       "session_id": "20260912_172000_955_cheek_speaking_in_quiet",
       "trial_alias": "Trial 12",
-      "status": "INCLUDED",
-      "reason": "Processed 144 frames, 88 training frames mapped",
-      "total_rows": 144,
-      "included_rows": 88
+      "status": "EXCLUDED",
+      "reason": "Unconfirmed phonation timing / non-standard interval protocol; excluded to prevent label noise.",
+      "total_rows": 0,
+      "included_rows": 0
     },
     {
       "session_id": "20260912_172116_220_cheek_speaking_in_quiet",
       "trial_alias": "Trial 13",
       "status": "INCLUDED",
-      "reason": "Processed 135 frames, 93 training frames mapped",
+      "reason": "Processed 135 frames, 84 training frames mapped",
       "total_rows": 135,
-      "included_rows": 93
+      "included_rows": 84
     },
     {
       "session_id": "20260912_173426_668_cheek_speaking_with_background_noise",

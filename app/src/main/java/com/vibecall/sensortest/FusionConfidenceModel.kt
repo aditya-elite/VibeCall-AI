@@ -56,10 +56,11 @@ class FusionConfidenceModel(
 
     private var backendStatus: String = "Model uninitialized"
     private var isModelInitialized: Boolean = false
+    private var isMetadataValid: Boolean = false
 
-    // Normalization constants (loaded from metadata or fallback defaults)
+    // Normalization constants loaded strictly from validated metadata
     private val means = FloatArray(INPUT_DIM)
-    private val stds = FloatArray(INPUT_DIM) { 1.0f }
+    private val stds = FloatArray(INPUT_DIM)
     private var clipMin: Float = -5.0f
     private var clipMax: Float = 5.0f
 
@@ -76,30 +77,38 @@ class FusionConfidenceModel(
 
     init {
         loadMetadata(context, metadataFilename)
-        initializeInterpreter(context, modelFilename)
+        if (isMetadataValid) {
+            initializeInterpreter(context, modelFilename)
+        } else {
+            isModelInitialized = false
+        }
     }
 
     private fun loadMetadata(context: Context, filename: String) {
         try {
             val jsonString = context.assets.open(filename).bufferedReader().use { it.readText() }
-            val root = JSONObject(jsonString)
-            val norm = root.getJSONObject("normalization")
-            val jsonMeans = norm.getJSONArray("means")
-            val jsonStds = norm.getJSONArray("stds")
-            clipMin = norm.optDouble("clip_min", -5.0).toFloat()
-            clipMax = norm.optDouble("clip_max", 5.0).toFloat()
+            val (valid, errorMsg, parsedMeans, parsedStds, pClipMin, pClipMax) = validateAndParseMetadataJson(jsonString)
+            if (!valid) {
+                isMetadataValid = false
+                lastError = errorMsg ?: "Metadata validation failed"
+                backendStatus = "Model unavailable ($lastError)"
+                Log.e(TAG, "Strict metadata validation rejected $filename: $lastError")
+                return
+            }
 
-            for (i in 0 until minOf(INPUT_DIM, jsonMeans.length())) {
-                means[i] = jsonMeans.getDouble(i).toFloat()
+            for (i in 0 until INPUT_DIM) {
+                means[i] = parsedMeans!![i]
+                stds[i] = parsedStds!![i]
             }
-            for (i in 0 until minOf(INPUT_DIM, jsonStds.length())) {
-                val s = jsonStds.getDouble(i).toFloat()
-                stds[i] = if (s > 1e-6f) s else 1.0f
-            }
-            Log.i(TAG, "Loaded fusion model metadata ($filename) with $INPUT_DIM feature normalization constants.")
+            clipMin = pClipMin
+            clipMax = pClipMax
+            isMetadataValid = true
+            Log.i(TAG, "Loaded and strictly validated fusion model metadata ($filename) with $INPUT_DIM features.")
         } catch (e: Exception) {
-            Log.w(TAG, "Failed to load $filename; using neutral fallback normalization.", e)
-            lastError = "Metadata load failed: ${e.message}"
+            isMetadataValid = false
+            lastError = "Metadata file load error: ${e.message}"
+            backendStatus = "Model unavailable ($lastError)"
+            Log.e(TAG, "Failed to read or parse metadata asset $filename: ${e.message}", e)
         }
     }
 
@@ -108,7 +117,7 @@ class FusionConfidenceModel(
         try {
             modelBuffer = loadModelFile(context, filename)
         } catch (e: Exception) {
-            backendStatus = "Model unavailable (file not found)"
+            backendStatus = "Model unavailable (model file not found)"
             isModelInitialized = false
             failureCount++
             lastError = "Model file load failed: ${e.message}"
@@ -124,10 +133,16 @@ class FusionConfidenceModel(
                 addDelegate(delegate)
                 setNumThreads(2)
             }
-            interpreter = Interpreter(modelBuffer, options)
-            backendStatus = "NNAPI requested/active"
+            val interp = Interpreter(modelBuffer, options)
+            if (!verifyInterpreterTensors(interp)) {
+                delegate.close()
+                nnApiDelegate = null
+                return
+            }
+            interpreter = interp
+            backendStatus = BACKEND_NNAPI_UNVERIFIED
             isModelInitialized = true
-            Log.i(TAG, "FusionConfidenceModel initialized with NNAPI delegate.")
+            Log.i(TAG, "FusionConfidenceModel initialized with NNAPI delegate ($backendStatus).")
         } catch (e: Exception) {
             Log.w(TAG, "NNAPI delegate failed to initialize; falling back to CPU interpreter.", e)
             try {
@@ -136,8 +151,12 @@ class FusionConfidenceModel(
                 val cpuOptions = Interpreter.Options().apply {
                     setNumThreads(2)
                 }
-                interpreter = Interpreter(modelBuffer, cpuOptions)
-                backendStatus = "CPU fallback"
+                val interp = Interpreter(modelBuffer, cpuOptions)
+                if (!verifyInterpreterTensors(interp)) {
+                    return
+                }
+                interpreter = interp
+                backendStatus = BACKEND_CPU_FALLBACK
                 isModelInitialized = true
                 Log.i(TAG, "FusionConfidenceModel initialized with CPU fallback interpreter.")
             } catch (cpuEx: Exception) {
@@ -150,6 +169,40 @@ class FusionConfidenceModel(
         }
     }
 
+    private fun verifyInterpreterTensors(interp: Interpreter): Boolean {
+        try {
+            val inShape = interp.getInputTensor(0).shape()
+            val outShape = interp.getOutputTensor(0).shape()
+            if (!inShape.contentEquals(intArrayOf(1, INPUT_DIM))) {
+                val err = "Model input tensor shape mismatch: expected [1, $INPUT_DIM], got ${inShape.contentToString()}"
+                backendStatus = "Model unavailable ($err)"
+                isModelInitialized = false
+                lastError = err
+                Log.e(TAG, err)
+                interp.close()
+                return false
+            }
+            if (!outShape.contentEquals(intArrayOf(1, OUTPUT_DIM))) {
+                val err = "Model output tensor shape mismatch: expected [1, $OUTPUT_DIM], got ${outShape.contentToString()}"
+                backendStatus = "Model unavailable ($err)"
+                isModelInitialized = false
+                lastError = err
+                Log.e(TAG, err)
+                interp.close()
+                return false
+            }
+            return true
+        } catch (e: Exception) {
+            val err = "Tensor inspection failed: ${e.message}"
+            backendStatus = "Model unavailable ($err)"
+            isModelInitialized = false
+            lastError = err
+            Log.e(TAG, err, e)
+            interp.close()
+            return false
+        }
+    }
+
     /**
      * Runs inference on the provided 16-element feature vector.
      *
@@ -158,7 +211,7 @@ class FusionConfidenceModel(
      */
     @Synchronized
     fun infer(rawFeatures16: FloatArray): FusionInferenceResult {
-        if (!isModelInitialized || interpreter == null) {
+        if (!isModelInitialized || !isMetadataValid || interpreter == null) {
             failureCount++
             return FusionInferenceResult(
                 confidence = 0.5f,
@@ -236,6 +289,7 @@ class FusionConfidenceModel(
     fun getInferenceCount(): Int = inferenceCount
     fun getFailureCount(): Int = failureCount
     fun getBackendStatus(): String = backendStatus
+    fun isModelReady(): Boolean = isModelInitialized && isMetadataValid && interpreter != null
 
     fun close() {
         interpreter?.close()
@@ -243,6 +297,7 @@ class FusionConfidenceModel(
         interpreter = null
         nnApiDelegate = null
         isModelInitialized = false
+        isMetadataValid = false
     }
 
     private fun loadModelFile(context: Context, filename: String): MappedByteBuffer {
@@ -254,9 +309,144 @@ class FusionConfidenceModel(
         return fileChannel.map(FileChannel.MapMode.READ_ONLY, startOffset, declaredLength)
     }
 
+    data class MetadataParseResult(
+        val isValid: Boolean,
+        val error: String?,
+        val means: FloatArray?,
+        val stds: FloatArray?,
+        val clipMin: Float,
+        val clipMax: Float
+    )
+
     companion object {
         private const val TAG = "FusionConfidenceModel"
         const val INPUT_DIM = 16
         const val OUTPUT_DIM = 1
+
+        const val BACKEND_UNAVAILABLE = "Model unavailable"
+        const val BACKEND_CPU_FALLBACK = "CPU fallback"
+        const val BACKEND_NNAPI_REQUESTED = "NNAPI delegate requested"
+        const val BACKEND_NNAPI_UNVERIFIED = "NNAPI delegate initialized — physical NPU not independently verified"
+
+        val EXPECTED_FEATURE_ORDER = listOf(
+            "microphone_log_energy_db",
+            "microphone_pitch_strength",
+            "microphone_pitch_reliable",
+            "log_accel_peak_power",
+            "accel_peak_prominence",
+            "pitch_difference_hz",
+            "pitch_agreement_score",
+            "pitch_agreement_reliable",
+            "phone_motion_level",
+            "sensor_reliability",
+            "sensor_alignment_lag_ms",
+            "prev_microphone_log_energy_db",
+            "prev_microphone_pitch_strength",
+            "prev_pitch_agreement_score",
+            "prev_phone_motion_level",
+            "prev_sensor_reliability"
+        )
+
+        /**
+         * Strictly validates metadata schema against the Step 4 16-feature specification.
+         * Fails if feature count, order, means, stds, or shapes do not strictly conform.
+         */
+        fun validateAndParseMetadataJson(jsonString: String): MetadataParseResult {
+            try {
+                val root = JSONObject(jsonString)
+
+                // 1. Validate input_tensor section
+                if (!root.has("input_tensor")) {
+                    return MetadataParseResult(false, "Missing 'input_tensor' section", null, null, -5f, 5f)
+                }
+                val inputObj = root.getJSONObject("input_tensor")
+                val shapeArray = inputObj.optJSONArray("shape")
+                if (shapeArray == null || shapeArray.length() != 2 || shapeArray.getInt(0) != 1 || shapeArray.getInt(1) != INPUT_DIM) {
+                    return MetadataParseResult(false, "Expected input_tensor shape [1, $INPUT_DIM]", null, null, -5f, 5f)
+                }
+
+                val featureOrderArray = inputObj.optJSONArray("feature_order")
+                if (featureOrderArray == null || featureOrderArray.length() != INPUT_DIM) {
+                    return MetadataParseResult(
+                        false,
+                        "Expected exactly $INPUT_DIM features in feature_order, got ${featureOrderArray?.length() ?: 0}",
+                        null, null, -5f, 5f
+                    )
+                }
+
+                for (i in 0 until INPUT_DIM) {
+                    val featName = featureOrderArray.getString(i)
+                    if (featName != EXPECTED_FEATURE_ORDER[i]) {
+                        return MetadataParseResult(
+                            false,
+                            "Feature mismatch at index $i: expected '${EXPECTED_FEATURE_ORDER[i]}', got '$featName'",
+                            null, null, -5f, 5f
+                        )
+                    }
+                }
+
+                // 2. Validate output_tensor section
+                if (root.has("output_tensor")) {
+                    val outputObj = root.getJSONObject("output_tensor")
+                    val outShapeArray = outputObj.optJSONArray("shape")
+                    if (outShapeArray != null && (outShapeArray.length() != 2 || outShapeArray.getInt(0) != 1 || outShapeArray.getInt(1) != OUTPUT_DIM)) {
+                        return MetadataParseResult(false, "Expected output_tensor shape [1, $OUTPUT_DIM]", null, null, -5f, 5f)
+                    }
+                }
+
+                // 3. Validate normalization section
+                if (!root.has("normalization")) {
+                    return MetadataParseResult(false, "Missing 'normalization' section", null, null, -5f, 5f)
+                }
+                val normObj = root.getJSONObject("normalization")
+                val meansArray = normObj.optJSONArray("means")
+                val stdsArray = normObj.optJSONArray("stds")
+
+                if (meansArray == null || meansArray.length() != INPUT_DIM) {
+                    return MetadataParseResult(
+                        false,
+                        "Expected exactly $INPUT_DIM normalization means, got ${meansArray?.length() ?: 0}",
+                        null, null, -5f, 5f
+                    )
+                }
+                if (stdsArray == null || stdsArray.length() != INPUT_DIM) {
+                    return MetadataParseResult(
+                        false,
+                        "Expected exactly $INPUT_DIM normalization stds, got ${stdsArray?.length() ?: 0}",
+                        null, null, -5f, 5f
+                    )
+                }
+
+                val parsedMeans = FloatArray(INPUT_DIM)
+                val parsedStds = FloatArray(INPUT_DIM)
+
+                for (i in 0 until INPUT_DIM) {
+                    val m = meansArray.getDouble(i).toFloat()
+                    if (m.isNaN() || m.isInfinite()) {
+                        return MetadataParseResult(false, "Mean at index $i is not finite: $m", null, null, -5f, 5f)
+                    }
+                    parsedMeans[i] = m
+
+                    val s = stdsArray.getDouble(i).toFloat()
+                    if (s.isNaN() || s.isInfinite()) {
+                        return MetadataParseResult(false, "Standard deviation at index $i is not finite: $s", null, null, -5f, 5f)
+                    }
+                    if (s <= 0.0f) {
+                        return MetadataParseResult(false, "Standard deviation at index $i must be strictly positive (> 0.0), got $s", null, null, -5f, 5f)
+                    }
+                    parsedStds[i] = s
+                }
+
+                val clipMin = normObj.optDouble("clip_min", -5.0).toFloat()
+                val clipMax = normObj.optDouble("clip_max", 5.0).toFloat()
+                if (clipMin.isNaN() || clipMax.isNaN() || clipMin >= clipMax) {
+                    return MetadataParseResult(false, "Invalid clipping bounds: clipMin=$clipMin, clipMax=$clipMax", null, null, -5f, 5f)
+                }
+
+                return MetadataParseResult(true, null, parsedMeans, parsedStds, clipMin, clipMax)
+            } catch (e: Exception) {
+                return MetadataParseResult(false, "JSON parsing exception: ${e.message}", null, null, -5f, 5f)
+            }
+        }
     }
 }
