@@ -425,6 +425,16 @@
                             android:text="Running 500-inference benchmark &amp; verification…"
                             android:textColor="@color/vibe_text_secondary"
                             android:textSize="10.5sp" />
+
+                        <TextView
+                            android:id="@+id/step6DevicesListText"
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:layout_marginTop="6dp"
+                            android:fontFamily="monospace"
+                            android:text="Available NNAPI Devices:\nScanning…"
+                            android:textColor="@color/vibe_text_secondary"
+                            android:textSize="10sp" />
                     </LinearLayout>
                 </com.google.android.material.card.MaterialCardView>
             </LinearLayout>

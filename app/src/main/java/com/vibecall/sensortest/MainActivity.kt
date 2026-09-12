@@ -53,6 +53,8 @@ class MainActivity : AppCompatActivity() {
     private lateinit var modeCharacterizationStatus: TextView
 
     // Step 6 UI Components
+    private lateinit var npuText: TextView
+    private lateinit var npuIcon: ImageView
     private lateinit var step6AcceleratorText: TextView
     private lateinit var step6DeviceTypeText: TextView
     private lateinit var step6DriverVersionText: TextView
@@ -62,6 +64,7 @@ class MainActivity : AppCompatActivity() {
     private lateinit var step6LatencyText: TextView
     private lateinit var step6StatusBadge: TextView
     private lateinit var step6ReasonText: TextView
+    private lateinit var step6DevicesListText: TextView
 
     private var latestZip: File? = null
     private var latestDenoisedWav: File? = null
@@ -134,6 +137,7 @@ class MainActivity : AppCompatActivity() {
         step6LatencyText = findViewById(R.id.step6LatencyText)
         step6StatusBadge = findViewById(R.id.step6StatusBadge)
         step6ReasonText = findViewById(R.id.step6ReasonText)
+        step6DevicesListText = findViewById(R.id.step6DevicesListText)
 
         recordingModeRadioGroup.setOnCheckedChangeListener { _, checkedId ->
             if (checkedId == R.id.radioModeFair) {
@@ -193,8 +197,8 @@ class MainActivity : AppCompatActivity() {
         findViewById<TextView>(R.id.deviceInfoText).text = recorder.deviceSummary()
 
         // Verify Fusion Model hardware acceleration on launch
-        val npuText = findViewById<TextView>(R.id.npuStatusText)
-        val npuIcon = findViewById<ImageView>(R.id.npuStatusIcon)
+        npuText = findViewById(R.id.npuStatusText)
+        npuIcon = findViewById(R.id.npuStatusIcon)
         try {
             val warmup = FusionConfidenceModel(this, requireNonCpuAcceleration = false, allowCpuFallback = true)
             val backend = warmup.getBackendStatus()
@@ -235,7 +239,7 @@ class MainActivity : AppCompatActivity() {
             recorder.updateAccelerationVerification(result)
 
             runOnUiThread {
-                step6AcceleratorText.text = result.selectedDeviceName ?: "None"
+                step6AcceleratorText.text = result.selectedAcceleratorName ?: "None"
                 step6DeviceTypeText.text = result.selectedDeviceType ?: "None"
                 step6DriverVersionText.text = result.selectedDeviceVersion ?: "unknown"
                 step6SelectionForcedText.text = if (result.deviceSelectionForced) "YES" else "NO"
@@ -244,22 +248,38 @@ class MainActivity : AppCompatActivity() {
                 step6LatencyText.text = String.format(Locale.US, "%.1f / %d µs", result.meanLatencyUs, result.p95LatencyUs)
                 step6ReasonText.text = result.reason
 
+                val devicesFormatted = if (result.availableDevices.isEmpty()) {
+                    "Available NNAPI Devices: None exposed by Android runtime"
+                } else {
+                    "Available NNAPI Devices (${result.availableDevices.size}):\n" +
+                        result.availableDevices.joinToString("\n") { it.toFormattedDisplayString() }
+                }
+                step6DevicesListText.text = devicesFormatted
+
                 when (result.status) {
                     AccelerationStatus.VERIFIED_NON_CPU_ACCELERATOR -> {
-                        step6StatusBadge.text = "VERIFIED"
+                        step6StatusBadge.text = "VERIFIED NPU"
                         step6StatusBadge.setTextColor(ContextCompat.getColor(this, R.color.vibe_success_green))
+                        npuText.text = "Fusion Backend: NPU (${result.actualBackend})"
+                        npuText.setTextColor(ContextCompat.getColor(this, R.color.vibe_success_green))
+                        npuIcon.setImageResource(R.drawable.ic_shield_check)
+                        npuIcon.imageTintList = ContextCompat.getColorStateList(this, R.color.vibe_success_green)
                     }
                     AccelerationStatus.INCONCLUSIVE -> {
                         step6StatusBadge.text = "INCONCLUSIVE"
                         step6StatusBadge.setTextColor(ContextCompat.getColor(this, R.color.vibe_amber))
+                        npuText.text = "Fusion Backend: Inconclusive (${result.actualBackend})"
+                        npuText.setTextColor(ContextCompat.getColor(this, R.color.vibe_amber))
+                        npuIcon.setImageResource(R.drawable.ic_info)
+                        npuIcon.imageTintList = ContextCompat.getColorStateList(this, R.color.vibe_amber)
                     }
-                    AccelerationStatus.CPU_EXECUTION -> {
-                        step6StatusBadge.text = "CPU EXECUTION"
+                    AccelerationStatus.CPU_EXECUTION, AccelerationStatus.UNAVAILABLE -> {
+                        step6StatusBadge.text = "NPU UNAVAILABLE"
                         step6StatusBadge.setTextColor(ContextCompat.getColor(this, R.color.vibe_recording_red))
-                    }
-                    AccelerationStatus.UNAVAILABLE -> {
-                        step6StatusBadge.text = "UNAVAILABLE"
-                        step6StatusBadge.setTextColor(ContextCompat.getColor(this, R.color.vibe_recording_red))
+                        npuText.text = "Fusion Backend: NPU unavailable (Gain 1.0 active)"
+                        npuText.setTextColor(ContextCompat.getColor(this, R.color.vibe_recording_red))
+                        npuIcon.setImageResource(R.drawable.ic_info)
+                        npuIcon.imageTintList = ContextCompat.getColorStateList(this, R.color.vibe_recording_red)
                     }
                 }
             }

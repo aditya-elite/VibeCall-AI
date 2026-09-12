@@ -38,7 +38,7 @@ The updated VibeCall app was deployed directly to the flagship **iQOO 15 (`vivo 
 | **Trial 21** | `Cheek - speaking with noise` | 12.62s | **400.00 Hz** | 99 | 0.1800 | `UNPROCESSED` (Fair Mode) | **Fair Mode benchmark: 99/99 inferences, 80.5 µs latency, +7.09 dB attenuation (99.1% altered)** |
 | **Trial 22** | `Cheek - speaking with noise` | 11.80s | **400.00 Hz** | 93 | 0.0785 | `UNPROCESSED` (Fair Mode) | **Fair Mode benchmark: 93/93 inferences, 81.6 µs latency, +8.29 dB attenuation (99.2% altered)** |
 | **Trial 23** | `Cheek - speaking with noise` | 12.67s | **400.00 Hz** | 99 | 0.0754 | `UNPROCESSED` (Fair Mode) | **Fair Mode benchmark: 99/99 inferences, 69.1 µs latency, +6.82 dB attenuation (99.0% altered)** |
-| **Trial 24** | `Cheek - speaking with noise` | 14.88s | **400.00 Hz** | 116 | 0.0874 | `UNPROCESSED` (Fair Mode) | **Clarity track live verification: 116/116 inferences, 80.5 µs latency, +1.94 dB speech gain, 0.638 aligned correlation** |
+| **Trial 24** | `Cheek - speaking with noise` | 14.88s | **400.00 Hz** | 116 | 0.0874 | `UNPROCESSED` (Fair Mode) | **Clarity track live verification: 116/116 inferences, 80.5 µs CPU/XNNPACK latency, +1.94 dB speech gain, 0.638 aligned correlation** |
 
 
 ### Key Hardware Observations on iQOO 15:
@@ -46,7 +46,7 @@ The updated VibeCall app was deployed directly to the flagship **iQOO 15 (`vivo 
    - `UNPROCESSED` captures raw transducer audio with zero Android HAL AGC/pre-filtering. While it enables clean baseline characterization, unboosted speech amplitude sits at ~0.009 peak, occasionally causing trailing phonemes/word endings to feel attenuated.
    - `VOICE_COMMUNICATION` activates Android telephony pre-gain staging, raising speech peaks to **0.286–0.293** (~31× amplitude increase) within standard telephony operating range. RNNoise preserves **100%** of speech amplitude without chopping word endings.
 2. **Sensor Precision & Timing Stability**: The STMicroelectronics `lsm6dsvx` accelerometer on the iQOO 15 maintained an exact, rock-steady **400.00 Hz** sampling frequency ($\Delta t = 2.5000\text{ ms} \pm 0.0000\text{ ms}$) with zero jitter under Android 16 across 6,424 consecutive samples.
-3. **Snapdragon NPU Acceleration (NNAPI)**: Confirmed live TFLite NNAPI delegate execution directly utilizing the iQOO 15's onboard NPU (125 inferences with zero dropouts).
+3. **NNAPI Delegate Initialized — CPU/XNNPACK Fallback (Not NPU Execution)**: While the TFLite NNAPI delegate initialized without throwing, execution-plan evidence reveals that all 4 fusion-model operations were delegated to `TfLiteXNNPackDelegate` on the CPU. Physical NPU execution is NOT confirmed on this platform via NNAPI; measured ~80.5 µs latency represents CPU/XNNPACK vectorized execution.
 4. **Vibration Detection**: Bone-conducted cheek vibrations peaked up to **15.28 m/s²** during vocal bursts.
 
 ### Detailed Second-by-Second Acoustic Analysis (Trial 4: Raw vs RNNoise):
@@ -278,8 +278,8 @@ The placeholder model file `fusion_gate_model.tflite` (v1) in `app/src/main/asse
 
 | Trial           | Test Label                               | Average Trust Value | Inferences | Notes                                    |
 | --------------- | ----------------------------------------- | -------------------- | ---------- | ----------------------------------------- |
-| **Test B (v2)** | `Cheek - speaking in quiet`               | **0.3258**            | 47         | Confirmed varying, real NPU execution     |
-| **Test C (v2)** | `Cheek - speaking with background noise`  | **0.3048**            | 49         | Confirmed varying, real NPU execution     |
+| **Test B (v2)** | `Cheek - speaking in quiet`               | **0.3258**            | 47         | Confirmed varying inference execution (CPU/XNNPACK fallback) |
+| **Test C (v2)** | `Cheek - speaking with background noise`  | **0.3048**            | 49         | Confirmed varying inference execution (CPU/XNNPACK fallback) |
 
 **Important correction to an earlier draft of this document**: an earlier version of this file reported this result as "10.29 dB dynamic attenuation" and treated it as noise suppression. That was incorrect. The audio power numbers were:
 
@@ -708,7 +708,7 @@ Following APK installation on the connected iQOO 15 hardware, 4 additional live 
 
 #### Core Verification Highlights:
 1. **Telemetry Match (100%)**: Across all sessions, the number of inferences reported in `metadata.json` (`fusion_confidence_inference_count`) strictly equals the row count of `fusion_decisions.csv`. Zero null pointer bugs or missing statistics.
-2. **Sub-100 µs NPU Latency**: Even under rapid consecutive executions, NNAPI delegate inference time averaged 69.1–83.3 µs, well within real-time latency budgets (frame hop is 128 ms, budget utilization $< 0.1\%$).
+2. **Sub-100 µs CPU/XNNPACK Latency**: Even under rapid consecutive executions, CPU vectorized inference time averaged 69.1–83.3 µs on Snapdragon 8 Elite CPU cores (all 4 nodes assigned to `TfLiteXNNPackDelegate`, not physical NPU), well within real-time latency budgets (frame hop is 128 ms, budget utilization $< 0.1\%$).
 3. **Consistent Noise Reduction**: Over 99% of samples were actively filtered by RNNoise on raw acoustic audio, delivering 6.45–8.29 dB of unassisted neural noise attenuation across multiple test runs.
 
 ---
@@ -776,7 +776,7 @@ A full live recording was conducted on the physical **iQOO 15 (`vivo I2501`)** w
 | **Total Duration** | **14.78 s** (236,480 samples @ 16 kHz) |
 | **Audio File Duration Match** | **100% exact match** across all 5 WAV files (473,004 bytes each) |
 | **Inference Telemetry Match** | **116 rows** in `fusion_decisions.csv` $\equiv$ **116 inferences** in `metadata.json` (100% match) |
-| **Mean Inference Latency** | **80.50 µs** (sub-100 µs NNAPI delegate) |
+| **Mean Inference Latency** | **80.50 µs** (sub-100 µs CPU/XNNPACK latency; all 4 nodes assigned to `TfLiteXNNPackDelegate`, not physical NPU) |
 | **Max Inference Latency** | **149 µs** |
 | **RNNoise Attenuation** | **+4.71 dB** (modifying 98.41% of samples) |
 | **Raw vs RNNoise Unaligned Correlation** | `+0.0231` (effectively unaligned) |

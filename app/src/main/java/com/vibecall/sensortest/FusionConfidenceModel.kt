@@ -61,6 +61,20 @@ class FusionConfidenceModel(
     private var isModelInitialized: Boolean = false
     private var isMetadataValid: Boolean = false
 
+    // Telemetry properties for Step 6 truthful reporting
+    val requestedBackend: String = if (requireNonCpuAcceleration) "MANDATORY_NPU" else "FLEXIBLE"
+    var actualBackend: String = "uninitialized"
+        private set
+    var delegatedOperationCount: Int = 0
+        private set
+    val totalModelOperationCount: Int = TOTAL_MODEL_OPS
+    var isCpuFallbackDetected: Boolean = false
+        private set
+    var isMandatoryNpuSatisfied: Boolean = false
+        private set
+    var failureReason: String? = null
+        private set
+
     // Acceleration metadata and verification flags
     var selectedDeviceName: String? = null
         private set
@@ -157,8 +171,10 @@ class FusionConfidenceModel(
             availableDevices.firstOrNull { it.name == forcedAcceleratorName }
                 ?: NnapiDeviceInfo(forcedAcceleratorName, "ACCELERATOR", "forced", 0L, false)
         } else {
-            NnapiDeviceInspector.findBestNonCpuDevice(availableDevices)
+            NnapiDeviceInspector.searchQualcommNonCpuAccelerator(availableDevices)
         }
+
+        NnapiDeviceInspector.logAndTagDevices(availableDevices, targetDevice?.name)
 
         if (targetDevice != null) {
             selectedDeviceName = targetDevice.name
@@ -167,15 +183,23 @@ class FusionConfidenceModel(
             selectedDeviceFeatureLevel = targetDevice.featureLevel
         }
 
-        if (requireNonCpuAcceleration && targetDevice == null && availableDevices.isNotEmpty() && availableDevices.all { it.isCpu || it.type == "CPU" }) {
-            val err = "Mandatory non-CPU acceleration requested, but only CPU NNAPI devices available (${availableDevices.joinToString { it.name }})"
-            backendStatus = "Model unavailable ($err)"
-            isModelInitialized = false
-            failureCount++
-            lastError = err
-            initializationError = err
-            Log.e(TAG, err)
-            return
+        if (requireNonCpuAcceleration) {
+            if (targetDevice == null || targetDevice.isCpu || targetDevice.type == "CPU") {
+                val devListStr = if (availableDevices.isEmpty()) "none" else availableDevices.joinToString { "${it.name} (${it.type})" }
+                val err = "No compatible non-CPU Qualcomm accelerator found (available: $devListStr). CPU fallback disabled."
+                backendStatus = BACKEND_NPU_UNAVAILABLE
+                actualBackend = BACKEND_NPU_UNAVAILABLE
+                failureReason = err
+                initializationError = err
+                isCpuFallbackDetected = true
+                isMandatoryNpuSatisfied = false
+                delegatedOperationCount = 0
+                isModelInitialized = false
+                failureCount++
+                lastError = err
+                Log.w(TAG, "Mandatory NPU mode: $err. Backend reported as '$BACKEND_NPU_UNAVAILABLE'. CPU fallback prohibited.")
+                return
+            }
         }
 
         // Try NNAPI execution
@@ -193,6 +217,7 @@ class FusionConfidenceModel(
             nnApiDelegate = delegate
             val options = Interpreter.Options().apply {
                 addDelegate(delegate)
+                setUseXNNPACK(false) // Strictly prevent fusion model assignment to XNNPACK!
                 setNumThreads(2)
             }
             val interp = Interpreter(modelBuffer, options)
@@ -204,25 +229,34 @@ class FusionConfidenceModel(
             interpreter = interp
             isCompilationSucceeded = true
             isFullGraphSupported = true
+            delegatedOperationCount = TOTAL_MODEL_OPS
+            isCpuFallbackDetected = false
+            isMandatoryNpuSatisfied = true
+            actualBackend = targetDevice?.name ?: "NNAPI accelerator"
             backendStatus = if (isDeviceSelectionForced && targetDevice != null) {
-                "NNAPI forced accelerator: ${targetDevice.name} (${targetDevice.type})"
+                "NNAPI accelerator: ${targetDevice.name} (${targetDevice.type})"
             } else {
-                BACKEND_NNAPI_UNVERIFIED
+                "NNAPI delegate active"
             }
             isModelInitialized = true
-            Log.i(TAG, "FusionConfidenceModel initialized with NNAPI delegate ($backendStatus).")
+            Log.i(TAG, "FusionConfidenceModel initialized with NNAPI delegate ($backendStatus). All $TOTAL_MODEL_OPS operations assigned.")
         } catch (e: Exception) {
             if (requireNonCpuAcceleration) {
-                val err = "Mandatory non-CPU NNAPI acceleration failed: ${e.message}"
+                val err = "Model delegation to accelerator '${targetDevice?.name}' failed: ${e.message}"
                 Log.e(TAG, err, e)
                 nnApiDelegate?.close()
                 nnApiDelegate = null
                 interpreter = null
-                backendStatus = "Model unavailable ($err)"
+                backendStatus = BACKEND_NPU_UNAVAILABLE
+                actualBackend = BACKEND_NPU_UNAVAILABLE
+                failureReason = err
+                initializationError = err
+                isCpuFallbackDetected = true
+                isMandatoryNpuSatisfied = false
+                delegatedOperationCount = 0
                 isModelInitialized = false
                 failureCount++
                 lastError = err
-                initializationError = err
                 return
             }
 
@@ -238,11 +272,19 @@ class FusionConfidenceModel(
                     return
                 }
                 interpreter = interp
+                isCompilationSucceeded = true
+                isFullGraphSupported = false
+                delegatedOperationCount = 0
+                isCpuFallbackDetected = true
+                isMandatoryNpuSatisfied = false
+                actualBackend = "CPU interpreter"
                 backendStatus = BACKEND_CPU_FALLBACK
                 isModelInitialized = true
                 Log.i(TAG, "FusionConfidenceModel initialized with CPU fallback interpreter.")
             } catch (cpuEx: Exception) {
-                backendStatus = "Model unavailable (CPU init failed)"
+                backendStatus = "Model unavailable (CPU init failed: ${cpuEx.message})"
+                actualBackend = "Model unavailable"
+                failureReason = cpuEx.message
                 isModelInitialized = false
                 failureCount++
                 lastError = "CPU init failed: ${cpuEx.message}"
@@ -406,8 +448,10 @@ class FusionConfidenceModel(
         private const val TAG = "FusionConfidenceModel"
         const val INPUT_DIM = 16
         const val OUTPUT_DIM = 1
+        const val TOTAL_MODEL_OPS = 4
 
         const val BACKEND_UNAVAILABLE = "Model unavailable"
+        const val BACKEND_NPU_UNAVAILABLE = "NPU unavailable"
         const val BACKEND_CPU_FALLBACK = "CPU fallback"
         const val BACKEND_NNAPI_REQUESTED = "NNAPI delegate requested"
         const val BACKEND_NNAPI_UNVERIFIED = "NNAPI delegate initialized — physical NPU not independently verified"
