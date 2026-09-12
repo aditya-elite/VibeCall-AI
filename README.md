@@ -77,25 +77,27 @@ The updated VibeCall app was deployed directly to the flagship **iQOO 15 (`vivo 
 | **Trial 9** | `Cheek - speaking in quiet` | 17.58s | **400.00 Hz** | 138 | 0.0987 | **On-cheek pitch agreement validated (23 frames, Δf down to 0.15 Hz)** |
 | **Trial 10** | `Away-from-cheek control` | 15.16s | **400.00 Hz** | 119 | 0.0938 | **Negative control: agreement drops to 5 frames (0 on 'aaaa')** |
 | **Trial 11** | `Cheek - quiet baseline` | 17.94s | **400.00 Hz** | 141 | 0.1446 | **Silence rejection verified: 0 false agreements during silence** |
-| **Trial 12** | `Cheek - speaking in quiet` | 18.40s | **400.00 Hz** | 144 | 0.1277 | **Replicated: 21 agreements (Δf down to 0.06 Hz, Score 1.0000 on Z-axis)** |
-| **Trial 13** | `Cheek - speaking in quiet` | 17.20s | **400.00 Hz** | 135 | 0.1497 | **Replicated: 28 agreements (Δf down to 0.04 Hz, Score 1.0000 on Z-axis)** |
-| **Trial 14** | `Cheek - speaking with noise` | 18.40s | **400.00 Hz** | 144 | 0.1628 | **Noise robustness validated: 19 agreements (Δf down to 0.00 Hz, Score 1.0000)** |
+| **Trial 12** | `Cheek - speaking in quiet` | 18.40s | **400.00 Hz** | 144 | 0.1277 | **Stationary on-cheek: 21 agreements (peak score 1.0000 on Z-axis)** |
+| **Trial 13** | `Cheek - stationary vs movement` | 17.20s | **400.00 Hz** | 135 | 0.1497 | **Tested stationary speech vs speech with phone movement (28 agreements)** |
+| **Trial 14** | `Cheek - speaking with noise` | 18.40s | **400.00 Hz** | 144 | 0.1628 | **Pitch agreement detectable under noise (19 agreements, esp. for 'mmmm')** |
 
 ### Audio–Vibration Pitch Agreement Verification Matrix
 
-| Trial | Condition | Frames | Voiced Frames | Reliable Agreements | Min $\Delta f$ | Peak Score | Alignment Lag (Mean) | Physical Significance |
+| Trial | Condition | Frames | Voiced Frames | Reliable Agreements | Nominal Min $\Delta f$ | Peak Score | Alignment Lag (Mean) | Physical Significance |
 | :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- |
-| **Trial 9** | On-Cheek | 138 | 64 | **23** | 0.15 Hz | 0.9998 | 1.25 ms | First on-cheek pitch agreement validation |
+| **Trial 9** | On-Cheek (Quiet) | 138 | 64 | **23** | 0.15 Hz | 0.9998 | 1.25 ms | Initial on-cheek pitch agreement validation |
 | **Trial 10** | Away-from-Cheek | 119 | 63 | **5 (0 on 'aaaa')** | 0.39 Hz | 0.9988 | 1.36 ms | **Negative control: 78% drop, zero vowel agreement** |
 | **Trial 11** | Silence Baseline | 141 | 1 | **0** | — | 0.0000 | 1.25 ms | **Zero false pitch agreements during silence** |
-| **Trial 12** | On-Cheek | 144 | 56 | **21** | **0.06 Hz** | **1.0000** | 1.20 ms | Replicated sub-0.1 Hz agreement on Z-axis |
-| **Trial 13** | On-Cheek | 135 | 68 | **28** | **0.04 Hz** | **1.0000** | 1.47 ms | Replicated sub-0.05 Hz agreement on Z-axis |
-| **Trial 14** | On-Cheek w/ Noise | 144 | 77 | **19** | **0.00 Hz** | **1.0000** | 1.05 ms | **Noise immunity: bone conduction unaffected by airborne noise** |
+| **Trial 12** | On-Cheek (Quiet) | 144 | 56 | **21** | 0.06 Hz | 1.0000 | 1.20 ms | Replicated stationary on-cheek agreement |
+| **Trial 13** | Stationary vs Movement | 135 | 68 | **28** | 0.04 Hz | 1.0000 | 1.47 ms | Tested stationary speech vs phone movement |
+| **Trial 14** | On-Cheek w/ Noise | 144 | 77 | **19** | **0.00 Hz\*** | 1.0000 | 1.05 ms | **Pitch agreement detectable in noise (esp. 'mmmm')** |
+
+*\*Note: Nominal $\Delta f$ values reflect parabolic interpolation estimates; true physical spectral resolution for a 250 ms window at 400 Hz is limited by the Rayleigh criterion ($\Delta f \approx 4.0\text{ Hz}$). Interpolated matches demonstrate bin peak alignment rather than sub-Hertz sensor precision.*
 
 ### Key Physical & Algorithmic Findings:
 1. **Tissue Conduction Requirement (Negative Control)**: Trial 10 confirmed that holding the phone away from the cheek drops agreement to zero during open vowels ("aaaa"), confirming that tissue contact is physically required for vowel resonance transmission.
-2. **Silence Gating (Zero False Positives)**: Trial 11 confirmed that when speech audio RMS $< 0.002$, microphone pitch estimation is gated off, preventing spurious pitch agreements from sensor baseline noise or mechanical handling.
-3. **Acoustic Noise Robustness (Trial 14)**: Under loud airborne acoustic background noise, bone-conducted vocal vibrations on the Z-axis remained completely uncorrupted by acoustic noise, locking onto the voice fundamental with an exact $\Delta f = \mathbf{0.00\text{ Hz}}$ (Score 1.0000 across 19 frames).
+2. **Silence Gating (Candidate Peaks vs Silence)**: Trial 11 confirmed that when speech audio RMS $< 0.002$, microphone pitch estimation is gated off, preventing spurious pitch agreements even when the accelerometer FFT registers candidate spectral peaks from baseline noise floor.
+3. **Background Noise Detectability (Trial 14)**: Under loud airborne acoustic background noise, bone-conducted vocal fundamental resonance remained detectable on the Z-axis (particularly during nasal phonemes like "mmmm" with high chassis coupling).
 4. **Timing Synchronization**: Across all 14 trials on the iQOO 15 hardware, measured sensor alignment lag stayed between 0.05 ms and 2.47 ms (mean $\approx 1.2\text{ ms}$), well within the 15.0 ms threshold with zero lag penalties triggered.
 
 ### RNNoise (CPU) — Verified On-Device, Real Result

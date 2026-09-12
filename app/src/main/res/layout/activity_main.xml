@@ -223,7 +223,7 @@
                         android:layout_height="wrap_content"
                         android:layout_marginStart="8dp"
                         android:fontFamily="sans-serif-medium"
-                        android:text="NPU Hardware: Initializing NNAPI…"
+                        android:text="Fusion Backend: Initializing NNAPI…"
                         android:textColor="@color/vibe_success_green"
                         android:textSize="12sp" />
                 </LinearLayout>
@@ -411,54 +411,77 @@
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
                     android:layout_marginTop="6dp"
-                    android:text="Record a test session to audition RNNoise neural noise suppression vs raw audio."
+                    android:text="Record a test session to audition RNNoise baseline vs raw audio vs experimental fusion."
                     android:textColor="@color/vibe_text_secondary"
                     android:textSize="12sp" />
 
-                <!-- Playback Buttons Row -->
+                <!-- Playback Buttons: 3-Way Audition -->
                 <LinearLayout
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
                     android:layout_marginTop="12dp"
-                    android:orientation="horizontal">
+                    android:orientation="vertical">
+
+                    <LinearLayout
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:orientation="horizontal">
+
+                        <com.google.android.material.button.MaterialButton
+                            android:id="@+id/playDenoisedButton"
+                            android:layout_width="0dp"
+                            android:layout_height="50dp"
+                            android:layout_marginEnd="6dp"
+                            android:layout_weight="1"
+                            android:enabled="false"
+                            android:text="Play RNNoise"
+                            android:textColor="#FFFFFF"
+                            android:textSize="12sp"
+                            android:textStyle="bold"
+                            app:backgroundTint="@color/vibe_success_green"
+                            app:cornerRadius="12dp"
+                            app:icon="@drawable/ic_wave"
+                            app:iconGravity="textStart"
+                            app:iconPadding="6dp"
+                            app:iconTint="#FFFFFF" />
+
+                        <com.google.android.material.button.MaterialButton
+                            android:id="@+id/playRawButton"
+                            style="@style/Widget.MaterialComponents.Button.OutlinedButton"
+                            android:layout_width="0dp"
+                            android:layout_height="50dp"
+                            android:layout_marginStart="6dp"
+                            android:layout_weight="1"
+                            android:enabled="false"
+                            android:text="Play Raw Mic"
+                            android:textColor="@color/vibe_text"
+                            android:textSize="12sp"
+                            android:textStyle="bold"
+                            app:cornerRadius="12dp"
+                            app:icon="@drawable/ic_mic"
+                            app:iconGravity="textStart"
+                            app:iconPadding="6dp"
+                            app:iconTint="@color/vibe_text"
+                            app:strokeColor="@color/vibe_card_stroke"
+                            app:strokeWidth="1.5dp" />
+                    </LinearLayout>
 
                     <com.google.android.material.button.MaterialButton
-                        android:id="@+id/playDenoisedButton"
-                        android:layout_width="0dp"
-                        android:layout_height="52dp"
-                        android:layout_marginEnd="6dp"
-                        android:layout_weight="1"
+                        android:id="@+id/playFusionButton"
+                        android:layout_width="match_parent"
+                        android:layout_height="50dp"
+                        android:layout_marginTop="8dp"
                         android:enabled="false"
-                        android:text="Play Denoised"
+                        android:text="Play Fusion (Exp.)"
                         android:textColor="#FFFFFF"
                         android:textSize="12.5sp"
                         android:textStyle="bold"
-                        app:backgroundTint="@color/vibe_success_green"
+                        app:backgroundTint="@color/vibe_fusion_purple"
                         app:cornerRadius="12dp"
-                        app:icon="@drawable/ic_wave"
+                        app:icon="@drawable/ic_tune"
                         app:iconGravity="textStart"
-                        app:iconPadding="6dp"
+                        app:iconPadding="8dp"
                         app:iconTint="#FFFFFF" />
-
-                    <com.google.android.material.button.MaterialButton
-                        android:id="@+id/playRawButton"
-                        style="@style/Widget.MaterialComponents.Button.OutlinedButton"
-                        android:layout_width="0dp"
-                        android:layout_height="52dp"
-                        android:layout_marginStart="6dp"
-                        android:layout_weight="1"
-                        android:enabled="false"
-                        android:text="Play Raw Mic"
-                        android:textColor="@color/vibe_text"
-                        android:textSize="12.5sp"
-                        android:textStyle="bold"
-                        app:cornerRadius="12dp"
-                        app:icon="@drawable/ic_mic"
-                        app:iconGravity="textStart"
-                        app:iconPadding="6dp"
-                        app:iconTint="@color/vibe_text"
-                        app:strokeColor="@color/vibe_card_stroke"
-                        app:strokeWidth="1.5dp" />
                 </LinearLayout>
             </LinearLayout>
         </com.google.android.material.card.MaterialCardView>

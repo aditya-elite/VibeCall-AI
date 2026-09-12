@@ -1,0 +1,160 @@
+{
+  "manifest_version": "1.0.0",
+  "description": "VibeCall-AI Step 4 dataset manifest describing physical intervals across iQOO 15 hardware trials.",
+  "labels": [
+    "CONTACT_SPEECH",
+    "AWAY_SPEECH",
+    "SILENCE_STILL",
+    "SILENCE_MOVEMENT",
+    "CONTACT_SPEECH_MOVEMENT",
+    "UNCERTAIN"
+  ],
+  "label_mapping": {
+    "CONTACT_SPEECH": 1.0,
+    "CONTACT_SPEECH_MOVEMENT": 1.0,
+    "AWAY_SPEECH": 0.0,
+    "SILENCE_STILL": 0.0,
+    "SILENCE_MOVEMENT": 0.0,
+    "UNCERTAIN": -1.0
+  },
+  "sessions": [
+    {
+      "session_id": "20260912_145725_604_cheek_speaking_in_quiet",
+      "trial_alias": "Trial 7",
+      "schema_version": "step2_10col",
+      "is_compatible": false,
+      "exclusion_reason": "Incompatible schema (10 columns); recorded before 34-column pitch-feature pipeline was implemented. Missing pitch & spectral metrics.",
+      "intervals": []
+    },
+    {
+      "session_id": "20260912_153252_897_cheek_speaking_with_background_noise",
+      "trial_alias": "Trial 8",
+      "schema_version": "step2_10col",
+      "is_compatible": false,
+      "exclusion_reason": "Incompatible schema (10 columns); recorded before 34-column pitch-feature pipeline was implemented. Missing pitch & spectral metrics.",
+      "intervals": []
+    },
+    {
+      "session_id": "20260912_164416_129_cheek_speaking_in_quiet",
+      "trial_alias": "Trial 9",
+      "schema_version": "step3_34col",
+      "is_compatible": true,
+      "exclusion_reason": null,
+      "condition_summary": "Stationary on-cheek speech in quiet (5-phase protocol)",
+      "default_label": "UNCERTAIN",
+      "intervals": [
+        { "start_ms": 1500.0, "end_ms": 3500.0, "label": "SILENCE_STILL", "notes": "Initial stationary silence baseline" },
+        { "start_ms": 3800.0, "end_ms": 7000.0, "label": "CONTACT_SPEECH", "notes": "Sustained 'aaaa' phonation on cheek" },
+        { "start_ms": 7500.0, "end_ms": 10500.0, "label": "SILENCE_STILL", "notes": "Inter-phonation silent pause" },
+        { "start_ms": 10800.0, "end_ms": 13800.0, "label": "CONTACT_SPEECH", "notes": "Sustained 'mmmm' phonation on cheek" }
+      ]
+    },
+    {
+      "session_id": "20260912_165406_477_cheek_speaking_in_quiet",
+      "trial_alias": "Trial 10",
+      "schema_version": "step3_34col",
+      "is_compatible": true,
+      "exclusion_reason": null,
+      "condition_summary": "Away-from-cheek negative control (held off face)",
+      "default_label": "UNCERTAIN",
+      "intervals": [
+        { "start_ms": 1500.0, "end_ms": 3200.0, "label": "SILENCE_STILL", "notes": "Initial silence baseline off cheek" },
+        { "start_ms": 3500.0, "end_ms": 7200.0, "label": "AWAY_SPEECH", "notes": "Loud 'aaaa' phonation without skin contact" },
+        { "start_ms": 7500.0, "end_ms": 9200.0, "label": "SILENCE_STILL", "notes": "Inter-phonation silent pause" },
+        { "start_ms": 9600.0, "end_ms": 13500.0, "label": "AWAY_SPEECH", "notes": "Loud 'mmmm' phonation without skin contact" }
+      ]
+    },
+    {
+      "session_id": "20260912_170357_939_cheek_speaking_in_quiet",
+      "trial_alias": "Trial 11",
+      "schema_version": "step3_34col",
+      "is_compatible": true,
+      "exclusion_reason": null,
+      "condition_summary": "Continuous stationary silence on cheek",
+      "default_label": "UNCERTAIN",
+      "intervals": [
+        { "start_ms": 1500.0, "end_ms": 16500.0, "label": "SILENCE_STILL", "notes": "Continuous silence on cheek, sensor noise floor baseline" }
+      ]
+    },
+    {
+      "session_id": "20260912_172000_955_cheek_speaking_in_quiet",
+      "trial_alias": "Trial 12",
+      "schema_version": "step3_34col",
+      "is_compatible": true,
+      "exclusion_reason": null,
+      "condition_summary": "Stationary on-cheek speech in quiet replication",
+      "default_label": "UNCERTAIN",
+      "intervals": [
+        { "start_ms": 1500.0, "end_ms": 3500.0, "label": "SILENCE_STILL", "notes": "Pre-speech stationary pause" },
+        { "start_ms": 4000.0, "end_ms": 7500.0, "label": "CONTACT_SPEECH", "notes": "Sustained 'aaaa' phonation on cheek" },
+        { "start_ms": 7800.0, "end_ms": 10000.0, "label": "SILENCE_STILL", "notes": "Inter-phonation silent pause" },
+        { "start_ms": 10200.0, "end_ms": 14000.0, "label": "CONTACT_SPEECH", "notes": "Sustained 'mmmm' phonation on cheek" }
+      ]
+    },
+    {
+      "session_id": "20260912_172116_220_cheek_speaking_in_quiet",
+      "trial_alias": "Trial 13",
+      "schema_version": "step3_34col",
+      "is_compatible": true,
+      "exclusion_reason": null,
+      "condition_summary": "Stationary speech versus speech with phone movement",
+      "default_label": "UNCERTAIN",
+      "intervals": [
+        { "start_ms": 1500.0, "end_ms": 3200.0, "label": "SILENCE_STILL", "notes": "Pre-speech stationary pause" },
+        { "start_ms": 3456.0, "end_ms": 7200.0, "label": "CONTACT_SPEECH", "notes": "Stationary 'aaaa' phonation on cheek" },
+        { "start_ms": 7500.0, "end_ms": 9300.0, "label": "SILENCE_STILL", "notes": "Stationary silent pause" },
+        { "start_ms": 9400.0, "end_ms": 9650.0, "label": "SILENCE_MOVEMENT", "notes": "Handling motion spike during silence" },
+        { "start_ms": 9728.0, "end_ms": 11000.0, "label": "CONTACT_SPEECH", "notes": "Stationary 'mmmm' phonation" },
+        { "start_ms": 11008.0, "end_ms": 12000.0, "label": "CONTACT_SPEECH_MOVEMENT", "notes": "Speaking during deliberate phone movement/shift" },
+        { "start_ms": 12000.0, "end_ms": 14500.0, "label": "CONTACT_SPEECH", "notes": "Resumed steady phonation" }
+      ]
+    },
+    {
+      "session_id": "20260912_173426_668_cheek_speaking_with_background_noise",
+      "trial_alias": "Trial 14",
+      "schema_version": "step3_34col",
+      "is_compatible": true,
+      "exclusion_reason": null,
+      "condition_summary": "On-cheek speech under loud airborne background noise",
+      "default_label": "UNCERTAIN",
+      "intervals": [
+        { "start_ms": 1500.0, "end_ms": 3200.0, "label": "SILENCE_STILL", "notes": "Airborne noise pause without speech" },
+        { "start_ms": 3800.0, "end_ms": 7200.0, "label": "CONTACT_SPEECH", "notes": "Phonation in noise ('aaaa')" },
+        { "start_ms": 7600.0, "end_ms": 9000.0, "label": "SILENCE_STILL", "notes": "Noise pause without speech" },
+        { "start_ms": 9600.0, "end_ms": 13800.0, "label": "CONTACT_SPEECH", "notes": "Nasal phonation in noise ('mmmm')" }
+      ]
+    },
+    {
+      "session_id": "20260912_170312_821_cheek_speaking_in_quiet",
+      "trial_alias": "Trial 170312",
+      "schema_version": "step3_34col",
+      "is_compatible": true,
+      "exclusion_reason": "Short exploratory test (<4s total duration); excluded from core training set to prioritize standardized 5-phase sessions.",
+      "intervals": []
+    },
+    {
+      "session_id": "20260912_170321_155_cheek_speaking_in_quiet",
+      "trial_alias": "Trial 170321",
+      "schema_version": "step3_34col",
+      "is_compatible": true,
+      "exclusion_reason": "Exploratory test; excluded from core training set to prioritize standardized 5-phase sessions.",
+      "intervals": []
+    },
+    {
+      "session_id": "20260912_172038_265_cheek_speaking_in_quiet",
+      "trial_alias": "Trial 172038",
+      "schema_version": "step3_34col",
+      "is_compatible": true,
+      "exclusion_reason": "Short intermediate test (<6s); excluded from core training set.",
+      "intervals": []
+    },
+    {
+      "session_id": "20260912_172055_575_cheek_speaking_in_quiet",
+      "trial_alias": "Trial 172055",
+      "schema_version": "step3_34col",
+      "is_compatible": true,
+      "exclusion_reason": "Intermediate test (<10s); excluded from core training set.",
+      "intervals": []
+    }
+  ]
+}

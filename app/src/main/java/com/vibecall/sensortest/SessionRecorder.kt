@@ -44,7 +44,9 @@ data class SessionResult(
     val measuredSensorRateHz: Double,
     val averageTrustValue: Double = 1.0,
     val rnnoiseWavFile: File? = null,
-    val featuresFile: File? = null
+    val featuresFile: File? = null,
+    val fusionWavFile: File? = null,
+    val fusionDecisionsFile: File? = null
 )
 
 data class TelemetryData(
@@ -61,8 +63,58 @@ data class TelemetryData(
     val accelPeakReliable: Boolean = false,
     val pitchDifferenceHz: Double = 0.0,
     val pitchAgreementScore: Double = 0.0,
-    val pitchAgreementReliable: Boolean = false
+    val pitchAgreementReliable: Boolean = false,
+    val fusionConfidence: Float = 0.5f,
+    val appliedGain: Float = 1.0f,
+    val fusionControllerState: String = "PRESERVE",
+    val fusionBackendStatus: String = "NNAPI requested/active"
 )
+
+data class FusionDecisionRow(
+    val windowIndex: Long,
+    val audioWindowStartMs: Double,
+    val audioWindowEndMs: Double,
+    val rawConfidence: Float,
+    val modelReliable: Boolean,
+    val backendStatus: String,
+    val inferenceLatencyUs: Long,
+    val controllerState: String,
+    val targetGain: Float,
+    val appliedGainStart: Float,
+    val appliedGainEnd: Float,
+    val reason: String,
+    val micEnergyDb: Double,
+    val micPitchReliable: Int,
+    val phoneMotionLevel: Double,
+    val sensorReliability: Double,
+    val alignmentLagMs: Double,
+    val pitchAgreementScore: Double
+) {
+    fun toCsvRow(): String = buildString {
+        append(windowIndex).append(',')
+        append(String.format(Locale.US, "%.2f", audioWindowStartMs)).append(',')
+        append(String.format(Locale.US, "%.2f", audioWindowEndMs)).append(',')
+        append(String.format(Locale.US, "%.4f", rawConfidence)).append(',')
+        append(if (modelReliable) 1 else 0).append(',')
+        append('"').append(backendStatus.replace("\"", "\"\"")).append('"').append(',')
+        append(inferenceLatencyUs).append(',')
+        append(controllerState).append(',')
+        append(String.format(Locale.US, "%.4f", targetGain)).append(',')
+        append(String.format(Locale.US, "%.4f", appliedGainStart)).append(',')
+        append(String.format(Locale.US, "%.4f", appliedGainEnd)).append(',')
+        append('"').append(reason.replace("\"", "\"\"")).append('"').append(',')
+        append(String.format(Locale.US, "%.2f", micEnergyDb)).append(',')
+        append(micPitchReliable).append(',')
+        append(String.format(Locale.US, "%.4f", phoneMotionLevel)).append(',')
+        append(String.format(Locale.US, "%.4f", sensorReliability)).append(',')
+        append(String.format(Locale.US, "%.2f", alignmentLagMs)).append(',')
+        append(String.format(Locale.US, "%.4f", pitchAgreementScore))
+    }
+
+    companion object {
+        const val CSV_HEADER = "window_index,audio_window_start_ms,audio_window_end_ms,fusion_confidence,model_reliable,backend_status,inference_latency_us,controller_state,target_gain,applied_gain_start,applied_gain_end,controller_reason,mic_energy_db,mic_pitch_reliable,phone_motion_level,sensor_reliability,sensor_alignment_lag_ms,pitch_agreement_score"
+    }
+}
 
 class SessionRecorder(
     private val context: Context,
@@ -132,6 +184,30 @@ class SessionRecorder(
     @Volatile
     private var latestWindowFeatures: WindowFeatures? = null
 
+    // Step 4: Feature-Based Fusion-Confidence Model and Conservative Gain Controller
+    private var fusionConfidenceModel: FusionConfidenceModel? = null
+    private val safeGainController = SafeGainController()
+    private var fusionPcmFile: File? = null
+    private var fusionWavFile: File? = null
+    private var fusionDecisionsFile: File? = null
+    private var fusionDecisionsWriter: BufferedWriter? = null
+
+    @Volatile
+    private var latestFusionConfidence: Float = 0.5f
+    @Volatile
+    private var latestAppliedGain: Float = 1.0f
+    @Volatile
+    private var latestControllerState: String = "PRESERVE"
+    @Volatile
+    private var latestBackendStatus: String = "Model uninitialized"
+
+    // Lag-1 history trackers
+    private var prevMicEnergyDb: Double? = null
+    private var prevMicPitchStrength: Double? = null
+    private var prevPitchAgreementScore: Double? = null
+    private var prevPhoneMotionLevel: Double? = null
+    private var prevSensorReliability: Double? = null
+
     val isRecording: Boolean
         get() = recording
 
@@ -144,11 +220,29 @@ class SessionRecorder(
     val latestFeaturesFile: File?
         get() = featuresFile
 
+    val latestFusionWav: File?
+        get() = fusionWavFile
+
+    val latestFusionDecisionsFile: File?
+        get() = fusionDecisionsFile
+
     val currentFeatures: WindowFeatures?
         get() = latestWindowFeatures
 
     val latestRawWav: File?
         get() = wavFile
+
+    val currentFusionConfidence: Float
+        get() = latestFusionConfidence
+
+    val currentAppliedGain: Float
+        get() = latestAppliedGain
+
+    val currentBackendStatus: String
+        get() = latestBackendStatus
+
+    val currentControllerState: String
+        get() = latestControllerState
 
 
     fun deviceSummary(): String = buildString {
@@ -172,6 +266,9 @@ class SessionRecorder(
         gatedWavFile = File(directory, "gated_microphone.wav")
         rnnoisePcmFile = File(directory, "microphone_rnnoise.pcm")
         rnnoiseWavFile = File(directory, "microphone_rnnoise.wav")
+        fusionPcmFile = File(directory, "microphone_fusion.pcm")
+        fusionWavFile = File(directory, "microphone_fusion.wav")
+
         sensorWriter = BufferedWriter(
             OutputStreamWriter(FileOutputStream(File(directory, "accelerometer.csv")), Charsets.UTF_8),
             64 * 1024
@@ -189,6 +286,16 @@ class SessionRecorder(
             64 * 1024
         ).apply {
             write(WindowFeatures.CSV_HEADER)
+            newLine()
+        }
+
+        val fDecFile = File(directory, "fusion_decisions.csv")
+        fusionDecisionsFile = fDecFile
+        fusionDecisionsWriter = BufferedWriter(
+            OutputStreamWriter(FileOutputStream(fDecFile), Charsets.UTF_8),
+            64 * 1024
+        ).apply {
+            write(FusionDecisionRow.CSV_HEADER)
             newLine()
         }
 
@@ -213,6 +320,20 @@ class SessionRecorder(
             .onFailure { Log.w("SessionRecorder", "Failed to initialize RnnoiseProcessor", it) }
             .getOrNull()
 
+        fusionConfidenceModel = runCatching { FusionConfidenceModel(context) }
+            .onFailure { Log.w("SessionRecorder", "Failed to initialize FusionConfidenceModel", it) }
+            .getOrNull()
+
+        latestBackendStatus = fusionConfidenceModel?.getBackendStatus() ?: "Model unavailable"
+        safeGainController.reset()
+        prevMicEnergyDb = null
+        prevMicPitchStrength = null
+        prevPitchAgreementScore = null
+        prevPhoneMotionLevel = null
+        prevSensorReliability = null
+        latestFusionConfidence = 0.5f
+        latestAppliedGain = 1.0f
+        latestControllerState = "PRESERVE"
 
         val recorder = buildAudioRecord()
         audioRecord = recorder
@@ -229,6 +350,8 @@ class SessionRecorder(
             recording = false
             recorder.release()
             sensorWriter?.close()
+            featuresWriter?.close()
+            fusionDecisionsWriter?.close()
             throw IllegalStateException("Android could not register the accelerometer listener")
         }
 
@@ -238,6 +361,8 @@ class SessionRecorder(
             sensorManager.unregisterListener(this)
             recorder.release()
             sensorWriter?.close()
+            featuresWriter?.close()
+            fusionDecisionsWriter?.close()
             throw IllegalStateException("The microphone did not enter the recording state")
         }
         audioStartElapsedNs = SystemClock.elapsedRealtimeNanos()
@@ -245,8 +370,9 @@ class SessionRecorder(
         audioDone = CountDownLatch(1)
         val outputPcm = pcmFile ?: error("PCM output was not created")
         val outputGatedPcm = gatedPcmFile
+        val outputFusionPcm = fusionPcmFile
         audioExecutor.execute {
-            recordAudioLoop(recorder, outputPcm, outputGatedPcm)
+            recordAudioLoop(recorder, outputPcm, outputGatedPcm, outputFusionPcm)
         }
     }
 
@@ -308,13 +434,27 @@ class SessionRecorder(
                     rnnoisePcm.delete()
                 }
 
+                val fusionPcm = fusionPcmFile
+                val fusionWav = fusionWavFile
+                if (fusionPcm != null && fusionWav != null && fusionPcm.exists() && fusionPcm.length() > 0) {
+                    writeWav(fusionPcm, fusionWav, AUDIO_SAMPLE_RATE, 1, 16)
+                    fusionPcm.delete()
+                }
+
                 fusionGateModel?.close()
                 fusionGateModel = null
                 rnnoiseProcessor?.close()
                 rnnoiseProcessor = null
+                fusionConfidenceModel?.close()
+                fusionConfidenceModel = null
+
                 featuresWriter?.flush()
                 featuresWriter?.close()
                 featuresWriter = null
+
+                fusionDecisionsWriter?.flush()
+                fusionDecisionsWriter?.close()
+                fusionDecisionsWriter = null
 
                 val directory = sessionDirectory ?: error("Missing session directory")
                 val measuredRate = measuredSensorRateHz()
@@ -330,7 +470,9 @@ class SessionRecorder(
                     measuredSensorRateHz = measuredRate,
                     averageTrustValue = avgTrust,
                     rnnoiseWavFile = rnnoiseWav,
-                    featuresFile = featuresFile
+                    featuresFile = featuresFile,
+                    fusionWavFile = fusionWav,
+                    fusionDecisionsFile = fusionDecisionsFile
                 )
             }
             onComplete(result)
@@ -399,7 +541,11 @@ class SessionRecorder(
                     accelPeakReliable = (feat?.accelPeakReliable == 1),
                     pitchDifferenceHz = feat?.pitchDifferenceHz ?: 0.0,
                     pitchAgreementScore = feat?.pitchAgreementScore ?: 0.0,
-                    pitchAgreementReliable = (feat?.pitchAgreementReliable == 1)
+                    pitchAgreementReliable = (feat?.pitchAgreementReliable == 1),
+                    fusionConfidence = latestFusionConfidence,
+                    appliedGain = latestAppliedGain,
+                    fusionControllerState = latestControllerState,
+                    fusionBackendStatus = latestBackendStatus
                 )
             )
         }
@@ -413,6 +559,8 @@ class SessionRecorder(
             fusionGateModel = null
             rnnoiseProcessor?.close()
             rnnoiseProcessor = null
+            fusionConfidenceModel?.close()
+            fusionConfidenceModel = null
             sensorThread.quitSafely()
             audioExecutor.shutdown()
         }
@@ -460,11 +608,13 @@ class SessionRecorder(
         throw IllegalStateException("Android could not initialise the microphone with VOICE_COMMUNICATION or MIC")
     }
 
-    private fun recordAudioLoop(recorder: AudioRecord, outputFile: File, gatedFile: File?) {
+    private fun recordAudioLoop(recorder: AudioRecord, outputFile: File, gatedFile: File?, fusionFile: File?) {
         val buffer = ByteArray(4_096)
+        var windowIndexCounter = 0L
         try {
             val gatedStream = gatedFile?.let { FileOutputStream(it) }
             val rnnoiseStream = rnnoisePcmFile?.let { FileOutputStream(it) }
+            val fusionStream = fusionFile?.let { FileOutputStream(it) }
             try {
                 FileOutputStream(outputFile).use { output ->
                     while (recording) {
@@ -524,7 +674,7 @@ class SessionRecorder(
                                     newLine()
                                 }
 
-                                // 4. Run NPU fusion gate model (kept for comparison only)
+                                // 4. Run legacy NPU fusion gate model (kept for diagnostic comparison only)
                                 val trust = fusionGateModel?.getTrustValue(
                                     audioVariance = variance,
                                     accelX = latestAccelX,
@@ -536,7 +686,7 @@ class SessionRecorder(
                                 totalTrustValue += trust
                                 trustInferenceCount++
 
-                                // 4. Scale audio by trustValue to produce gated audio output
+                                // Scale audio by trustValue to produce gated audio output
                                 if (gatedStream != null) {
                                     val gatedBuffer = ByteArray(read)
                                     for (i in 0 until numSamples) {
@@ -549,16 +699,114 @@ class SessionRecorder(
                                 }
 
                                 // 5. RNNoise real-time neural denoising (independent clean audio track)
-                                if (rnnoiseStream != null && rnnoiseProcessor != null) {
-                                    val denoised16k = rnnoiseProcessor?.processStream(shortSamples, numSamples)
-                                    if (denoised16k != null && denoised16k.isNotEmpty()) {
-                                        val rnnoiseBytes = ByteArray(denoised16k.size * 2)
-                                        for (i in denoised16k.indices) {
-                                            val s = denoised16k[i].toInt()
+                                val denoised16k = if (rnnoiseStream != null && rnnoiseProcessor != null) {
+                                    val cleaned = rnnoiseProcessor?.processStream(shortSamples, numSamples)
+                                    if (cleaned != null && cleaned.isNotEmpty()) {
+                                        val rnnoiseBytes = ByteArray(cleaned.size * 2)
+                                        for (i in cleaned.indices) {
+                                            val s = cleaned[i].toInt()
                                             rnnoiseBytes[i * 2] = (s and 0xFF).toByte()
                                             rnnoiseBytes[i * 2 + 1] = ((s shr 8) and 0xFF).toByte()
                                         }
                                         rnnoiseStream.write(rnnoiseBytes)
+                                    }
+                                    cleaned
+                                } else {
+                                    null
+                                }
+
+                                // 6. Step 4 Feature-Based Fusion-Confidence Model and Conservative Gain Controller
+                                val fVector = FloatArray(16)
+                                fVector[0] = windowFeatures.microphoneLogEnergyDb.toFloat()
+                                fVector[1] = windowFeatures.microphonePitchStrength.toFloat()
+                                fVector[2] = windowFeatures.microphonePitchReliable.toFloat()
+                                fVector[3] = kotlin.math.log10(max(0.0, windowFeatures.accelPeakPower) + 1e-6).toFloat()
+                                fVector[4] = windowFeatures.accelPeakProminence.toFloat()
+                                fVector[5] = windowFeatures.pitchDifferenceHz.toFloat()
+                                fVector[6] = windowFeatures.pitchAgreementScore.toFloat()
+                                fVector[7] = windowFeatures.pitchAgreementReliable.toFloat()
+                                fVector[8] = windowFeatures.phoneMotionLevel.toFloat()
+                                fVector[9] = windowFeatures.sensorReliability.toFloat()
+                                fVector[10] = windowFeatures.sensorAlignmentLagMs.toFloat()
+                                // Lag-1 context features (fall back to current on initial window)
+                                fVector[11] = (prevMicEnergyDb ?: windowFeatures.microphoneLogEnergyDb).toFloat()
+                                fVector[12] = (prevMicPitchStrength ?: windowFeatures.microphonePitchStrength).toFloat()
+                                fVector[13] = (prevPitchAgreementScore ?: windowFeatures.pitchAgreementScore).toFloat()
+                                fVector[14] = (prevPhoneMotionLevel ?: windowFeatures.phoneMotionLevel).toFloat()
+                                fVector[15] = (prevSensorReliability ?: windowFeatures.sensorReliability).toFloat()
+
+                                prevMicEnergyDb = windowFeatures.microphoneLogEnergyDb
+                                prevMicPitchStrength = windowFeatures.microphonePitchStrength
+                                prevPitchAgreementScore = windowFeatures.pitchAgreementScore
+                                prevPhoneMotionLevel = windowFeatures.phoneMotionLevel
+                                prevSensorReliability = windowFeatures.sensorReliability
+
+                                val inferenceResult = fusionConfidenceModel?.infer(fVector)
+                                    ?: FusionInferenceResult(
+                                        confidence = 0.5f,
+                                        modelReliable = false,
+                                        backendStatus = latestBackendStatus,
+                                        inferenceLatencyUs = 0L,
+                                        error = "Model not initialized"
+                                    )
+
+                                latestFusionConfidence = inferenceResult.confidence
+                                latestBackendStatus = inferenceResult.backendStatus
+
+                                val (targetGain, reason) = safeGainController.evaluateTargetGain(
+                                    microphoneLogEnergyDb = windowFeatures.microphoneLogEnergyDb.toFloat(),
+                                    microphonePitchReliable = windowFeatures.microphonePitchReliable.toFloat(),
+                                    modelConfidence = inferenceResult.confidence,
+                                    modelReliable = inferenceResult.modelReliable,
+                                    sensorReliability = windowFeatures.sensorReliability.toFloat(),
+                                    phoneMotionLevel = windowFeatures.phoneMotionLevel.toFloat(),
+                                    sensorAlignmentLagMs = windowFeatures.sensorAlignmentLagMs.toFloat()
+                                )
+
+                                if (denoised16k != null && denoised16k.isNotEmpty()) {
+                                    val fusionShorts = ShortArray(denoised16k.size)
+                                    val decision = safeGainController.applyGainToFrame(
+                                        inputShorts = denoised16k,
+                                        outputShorts = fusionShorts,
+                                        targetGain = targetGain,
+                                        reason = reason
+                                    )
+                                    latestAppliedGain = decision.appliedGainEnd
+                                    latestControllerState = decision.controllerState
+
+                                    if (fusionStream != null) {
+                                        val fusionBytes = ByteArray(fusionShorts.size * 2)
+                                        for (i in fusionShorts.indices) {
+                                            val s = fusionShorts[i].toInt()
+                                            fusionBytes[i * 2] = (s and 0xFF).toByte()
+                                            fusionBytes[i * 2 + 1] = ((s shr 8) and 0xFF).toByte()
+                                        }
+                                        fusionStream.write(fusionBytes)
+                                    }
+
+                                    val decisionRow = FusionDecisionRow(
+                                        windowIndex = windowIndexCounter++,
+                                        audioWindowStartMs = windowFeatures.audioWindowStartMs,
+                                        audioWindowEndMs = windowFeatures.audioWindowEndMs,
+                                        rawConfidence = inferenceResult.confidence,
+                                        modelReliable = inferenceResult.modelReliable,
+                                        backendStatus = inferenceResult.backendStatus,
+                                        inferenceLatencyUs = inferenceResult.inferenceLatencyUs,
+                                        controllerState = decision.controllerState,
+                                        targetGain = decision.targetGain,
+                                        appliedGainStart = decision.appliedGainStart,
+                                        appliedGainEnd = decision.appliedGainEnd,
+                                        reason = decision.reason,
+                                        micEnergyDb = windowFeatures.microphoneLogEnergyDb,
+                                        micPitchReliable = windowFeatures.microphonePitchReliable,
+                                        phoneMotionLevel = windowFeatures.phoneMotionLevel,
+                                        sensorReliability = windowFeatures.sensorReliability,
+                                        alignmentLagMs = windowFeatures.sensorAlignmentLagMs,
+                                        pitchAgreementScore = windowFeatures.pitchAgreementScore
+                                    )
+                                    fusionDecisionsWriter?.apply {
+                                        write(decisionRow.toCsvRow())
+                                        newLine()
                                     }
                                 }
                             }
@@ -571,23 +819,31 @@ class SessionRecorder(
                         }
                     }
 
-                    // Flush any remaining buffered audio in RNNoise accumulator
+                    // Flush any remaining buffered audio in RNNoise accumulator and apply trailing gain
                     if (rnnoiseStream != null && rnnoiseProcessor != null) {
                         val flushed16k = rnnoiseProcessor?.flush()
                         if (flushed16k != null && flushed16k.isNotEmpty()) {
                             val rnnoiseBytes = ByteArray(flushed16k.size * 2)
+                            val fusionBytes = ByteArray(flushed16k.size * 2)
+                            val currentGain = safeGainController.getCurrentGain()
                             for (i in flushed16k.indices) {
                                 val s = flushed16k[i].toInt()
                                 rnnoiseBytes[i * 2] = (s and 0xFF).toByte()
                                 rnnoiseBytes[i * 2 + 1] = ((s shr 8) and 0xFF).toByte()
+
+                                val f = (s * currentGain).toInt().coerceIn(-32768, 32767)
+                                fusionBytes[i * 2] = (f and 0xFF).toByte()
+                                fusionBytes[i * 2 + 1] = ((f shr 8) and 0xFF).toByte()
                             }
                             rnnoiseStream.write(rnnoiseBytes)
+                            fusionStream?.write(fusionBytes)
                         }
                     }
                 }
             } finally {
                 gatedStream?.close()
                 rnnoiseStream?.close()
+                fusionStream?.close()
             }
         } catch (error: Exception) {
             audioReadError = error.message ?: error.javaClass.simpleName
@@ -646,6 +902,20 @@ class SessionRecorder(
             put("feature_bandpass_hz", "80-185")
             put("feature_pitch_search_hz", "80-190")
             put("audio_accelerometer_alignment", "Audio sample bounds mapped from audioStartElapsedNs (elapsedRealtimeNanos). Sensor snapshots query samples <= audio end timestamp, excluding future samples. Uncertainty bounded by DMA delivery buffer latency (~5-15ms).")
+            put("fusion_enabled", fusionWavFile?.exists() == true)
+            put("fusion_audio_file", if (fusionWavFile?.exists() == true) "microphone_fusion.wav" else JSONObject.NULL)
+            put("fusion_decisions_file", if (fusionDecisionsFile?.exists() == true) "fusion_decisions.csv" else JSONObject.NULL)
+            put("fusion_model_name", "fusion_confidence_model.tflite")
+            put("fusion_model_metadata_file", "fusion_model_metadata.json")
+            put("fusion_model_input_dimension", 16)
+            put("fusion_backend_status", latestBackendStatus)
+            put("fusion_inference_count", fusionConfidenceModel?.getInferenceCount() ?: 0)
+            put("fusion_failure_count", fusionConfidenceModel?.getFailureCount() ?: 0)
+            put("fusion_avg_latency_us", fusionConfidenceModel?.getAverageLatencyUs() ?: 0.0)
+            put("fusion_max_latency_us", fusionConfidenceModel?.getMaxLatencyUs() ?: 0L)
+            put("fusion_controller_min_gain", safeGainController.minimumGain)
+            put("fusion_controller_pause_energy_threshold_db", safeGainController.pauseEnergyThresholdDb)
+            put("fusion_controller_min_pause_windows", safeGainController.minConsecutivePauseWindows)
             put("manufacturer", Build.MANUFACTURER)
             put("model", Build.MODEL)
             put("android_release", Build.VERSION.RELEASE)

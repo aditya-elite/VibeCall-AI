@@ -1,0 +1,324 @@
+{
+  "dataset_csv": "tools/data/training_dataset.csv",
+  "sample_count": 549,
+  "sessions": [
+    "20260912_164416_129_cheek_speaking_in_quiet",
+    "20260912_165406_477_cheek_speaking_in_quiet",
+    "20260912_170357_939_cheek_speaking_in_quiet",
+    "20260912_172000_955_cheek_speaking_in_quiet",
+    "20260912_172116_220_cheek_speaking_in_quiet",
+    "20260912_173426_668_cheek_speaking_with_background_noise"
+  ],
+  "cross_validation": {
+    "overall_metrics": {
+      "tp": 180,
+      "fp": 115,
+      "fn": 48,
+      "tn": 206,
+      "precision": 0.6101694915254238,
+      "recall": 0.7894736842105263,
+      "f1": 0.6883365200764819,
+      "false_positive_rate": 0.3582554517133956,
+      "accuracy": 0.7030965391621129
+    },
+    "condition_breakdown": {
+      "AWAY_SPEECH": {
+        "samples": 58,
+        "mean_confidence": 0.9790692524663334,
+        "pct_conf_ge_0_70": 1.0,
+        "pct_conf_le_0_20": 0.0,
+        "metrics": {
+          "tp": 0,
+          "fp": 58,
+          "fn": 0,
+          "tn": 0,
+          "precision": 0.0,
+          "recall": 0.0,
+          "f1": 0.0,
+          "false_positive_rate": 1.0,
+          "accuracy": 0.0
+        }
+      },
+      "CONTACT_SPEECH": {
+        "samples": 220,
+        "mean_confidence": 0.6996992479456798,
+        "pct_conf_ge_0_70": 0.6818181818181818,
+        "pct_conf_le_0_20": 0.17272727272727273,
+        "metrics": {
+          "tp": 172,
+          "fp": 0,
+          "fn": 48,
+          "tn": 0,
+          "precision": 1.0,
+          "recall": 0.7818181818181819,
+          "f1": 0.8775510204081634,
+          "false_positive_rate": 0.0,
+          "accuracy": 0.7818181818181819
+        }
+      },
+      "CONTACT_SPEECH_MOVEMENT": {
+        "samples": 8,
+        "mean_confidence": 0.9297697693109512,
+        "pct_conf_ge_0_70": 1.0,
+        "pct_conf_le_0_20": 0.0,
+        "metrics": {
+          "tp": 8,
+          "fp": 0,
+          "fn": 0,
+          "tn": 0,
+          "precision": 1.0,
+          "recall": 1.0,
+          "f1": 1.0,
+          "false_positive_rate": 0.0,
+          "accuracy": 1.0
+        }
+      },
+      "SILENCE_MOVEMENT": {
+        "samples": 1,
+        "mean_confidence": 0.002179158153012395,
+        "pct_conf_ge_0_70": 0.0,
+        "pct_conf_le_0_20": 1.0,
+        "metrics": {
+          "tp": 0,
+          "fp": 0,
+          "fn": 0,
+          "tn": 1,
+          "precision": 0.0,
+          "recall": 0.0,
+          "f1": 0.0,
+          "false_positive_rate": 0.0,
+          "accuracy": 1.0
+        }
+      },
+      "SILENCE_STILL": {
+        "samples": 262,
+        "mean_confidence": 0.2552068284899416,
+        "pct_conf_ge_0_70": 0.183206106870229,
+        "pct_conf_le_0_20": 0.6526717557251909,
+        "metrics": {
+          "tp": 0,
+          "fp": 57,
+          "fn": 0,
+          "tn": 205,
+          "precision": 0.0,
+          "recall": 0.0,
+          "f1": 0.0,
+          "false_positive_rate": 0.21755725190839695,
+          "accuracy": 0.7824427480916031
+        }
+      }
+    },
+    "folds": [
+      {
+        "val_session": "20260912_164416_129_cheek_speaking_in_quiet",
+        "train_samples": 464,
+        "val_samples": 85,
+        "metrics_at_0_5": {
+          "tp": 46,
+          "fp": 6,
+          "fn": 1,
+          "tn": 32,
+          "precision": 0.8846153846153846,
+          "recall": 0.9787234042553191,
+          "f1": 0.9292929292929293,
+          "false_positive_rate": 0.15789473684210525,
+          "accuracy": 0.9176470588235294
+        }
+      },
+      {
+        "val_session": "20260912_165406_477_cheek_speaking_in_quiet",
+        "train_samples": 465,
+        "val_samples": 84,
+        "metrics_at_0_5": {
+          "tp": 0,
+          "fp": 58,
+          "fn": 0,
+          "tn": 26,
+          "precision": 0.0,
+          "recall": 0.0,
+          "f1": 0.0,
+          "false_positive_rate": 0.6904761904761905,
+          "accuracy": 0.30952380952380953
+        }
+      },
+      {
+        "val_session": "20260912_170357_939_cheek_speaking_in_quiet",
+        "train_samples": 432,
+        "val_samples": 117,
+        "metrics_at_0_5": {
+          "tp": 0,
+          "fp": 47,
+          "fn": 0,
+          "tn": 70,
+          "precision": 0.0,
+          "recall": 0.0,
+          "f1": 0.0,
+          "false_positive_rate": 0.4017094017094017,
+          "accuracy": 0.5982905982905983
+        }
+      },
+      {
+        "val_session": "20260912_172000_955_cheek_speaking_in_quiet",
+        "train_samples": 461,
+        "val_samples": 88,
+        "metrics_at_0_5": {
+          "tp": 27,
+          "fp": 0,
+          "fn": 29,
+          "tn": 32,
+          "precision": 1.0,
+          "recall": 0.48214285714285715,
+          "f1": 0.6506024096385542,
+          "false_positive_rate": 0.0,
+          "accuracy": 0.6704545454545454
+        }
+      },
+      {
+        "val_session": "20260912_172116_220_cheek_speaking_in_quiet",
+        "train_samples": 456,
+        "val_samples": 93,
+        "metrics_at_0_5": {
+          "tp": 60,
+          "fp": 0,
+          "fn": 6,
+          "tn": 27,
+          "precision": 1.0,
+          "recall": 0.9090909090909091,
+          "f1": 0.9523809523809523,
+          "false_positive_rate": 0.0,
+          "accuracy": 0.9354838709677419
+        }
+      },
+      {
+        "val_session": "20260912_173426_668_cheek_speaking_with_background_noise",
+        "train_samples": 467,
+        "val_samples": 82,
+        "metrics_at_0_5": {
+          "tp": 47,
+          "fp": 4,
+          "fn": 12,
+          "tn": 19,
+          "precision": 0.9215686274509803,
+          "recall": 0.7966101694915254,
+          "f1": 0.8545454545454545,
+          "false_positive_rate": 0.17391304347826086,
+          "accuracy": 0.8048780487804879
+        }
+      }
+    ]
+  },
+  "model_metadata": {
+    "model_name": "fusion_confidence_model.tflite",
+    "format_version": "1.0.0",
+    "description": "VibeCall-AI Step 4 MLP fusion-confidence model for Outgoing Speech Enhancement",
+    "scientific_disclaimer": "Trained on single-speaker iQOO 15 hardware dataset. Treat as experimental prototype; do not claim universal generalization.",
+    "input_tensor": {
+      "name": "features_input",
+      "shape": [
+        1,
+        16
+      ],
+      "dtype": "FLOAT32",
+      "feature_order": [
+        "microphone_log_energy_db",
+        "microphone_pitch_strength",
+        "microphone_pitch_reliable",
+        "log_accel_peak_power",
+        "accel_peak_prominence",
+        "pitch_difference_hz",
+        "pitch_agreement_score",
+        "pitch_agreement_reliable",
+        "phone_motion_level",
+        "sensor_reliability",
+        "sensor_alignment_lag_ms",
+        "prev_microphone_log_energy_db",
+        "prev_microphone_pitch_strength",
+        "prev_pitch_agreement_score",
+        "prev_phone_motion_level",
+        "prev_sensor_reliability"
+      ]
+    },
+    "output_tensor": {
+      "name": "confidence_output",
+      "shape": [
+        1,
+        1
+      ],
+      "dtype": "FLOAT32",
+      "range": [
+        0.0,
+        1.0
+      ],
+      "description": "contact_speech_confidence (higher indicates higher probability of bone-conducted speech)"
+    },
+    "normalization": {
+      "method": "z_score",
+      "means": [
+        -76.87715148925781,
+        0.43137845396995544,
+        0.4754098355770111,
+        -5.664567470550537,
+        5.622950077056885,
+        2.6081056594848633,
+        0.16139234602451324,
+        0.16393442451953888,
+        0.02726028673350811,
+        1.0,
+        1.2613614797592163,
+        -76.66446685791016,
+        0.4328724443912506,
+        0.15391017496585846,
+        0.0269785076379776,
+        1.0
+      ],
+      "stds": [
+        40.899105072021484,
+        0.4443422853946686,
+        0.49939367175102234,
+        0.22874660789966583,
+        2.3134706020355225,
+        10.876083374023438,
+        0.3583797812461853,
+        0.3702157437801361,
+        0.033142123371362686,
+        1.0,
+        0.7187618613243103,
+        40.94578552246094,
+        0.445680171251297,
+        0.3510902523994446,
+        0.032682497054338455,
+        1.0
+      ],
+      "clip_min": -5.0,
+      "clip_max": 5.0
+    },
+    "preliminary_thresholds": {
+      "preservation_threshold": 0.7,
+      "pause_candidate_threshold": 0.2,
+      "uncertain_range": [
+        0.2,
+        0.7
+      ],
+      "status": "uncalibrated_preliminary"
+    },
+    "acoustic_guard": {
+      "pause_energy_threshold_db": -55.0,
+      "min_consecutive_pause_windows": 3,
+      "require_mic_pitch_unreliable": true,
+      "description": "Acoustic silence must be confirmed by microphone before pause attenuation is eligible."
+    },
+    "gain_controller_defaults": {
+      "min_gain": 0.5,
+      "attenuation_ramp_ms": 300.0,
+      "restore_ramp_ms": 30.0,
+      "hangover_windows": 2
+    },
+    "training_metadata": {
+      "total_samples": 549,
+      "positive_samples": 228,
+      "negative_samples": 321,
+      "training_accuracy": 0.9089252948760986,
+      "seed": 42
+    }
+  }
+}

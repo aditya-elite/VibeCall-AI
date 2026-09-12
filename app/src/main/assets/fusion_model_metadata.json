@@ -1,0 +1,114 @@
+{
+  "model_name": "fusion_confidence_model.tflite",
+  "format_version": "1.0.0",
+  "description": "VibeCall-AI Step 4 MLP fusion-confidence model for Outgoing Speech Enhancement",
+  "scientific_disclaimer": "Trained on single-speaker iQOO 15 hardware dataset. Treat as experimental prototype; do not claim universal generalization.",
+  "input_tensor": {
+    "name": "features_input",
+    "shape": [
+      1,
+      16
+    ],
+    "dtype": "FLOAT32",
+    "feature_order": [
+      "microphone_log_energy_db",
+      "microphone_pitch_strength",
+      "microphone_pitch_reliable",
+      "log_accel_peak_power",
+      "accel_peak_prominence",
+      "pitch_difference_hz",
+      "pitch_agreement_score",
+      "pitch_agreement_reliable",
+      "phone_motion_level",
+      "sensor_reliability",
+      "sensor_alignment_lag_ms",
+      "prev_microphone_log_energy_db",
+      "prev_microphone_pitch_strength",
+      "prev_pitch_agreement_score",
+      "prev_phone_motion_level",
+      "prev_sensor_reliability"
+    ]
+  },
+  "output_tensor": {
+    "name": "confidence_output",
+    "shape": [
+      1,
+      1
+    ],
+    "dtype": "FLOAT32",
+    "range": [
+      0.0,
+      1.0
+    ],
+    "description": "contact_speech_confidence (higher indicates higher probability of bone-conducted speech)"
+  },
+  "normalization": {
+    "method": "z_score",
+    "means": [
+      -76.87715148925781,
+      0.43137845396995544,
+      0.4754098355770111,
+      -5.664567470550537,
+      5.622950077056885,
+      2.6081056594848633,
+      0.16139234602451324,
+      0.16393442451953888,
+      0.02726028673350811,
+      1.0,
+      1.2613614797592163,
+      -76.66446685791016,
+      0.4328724443912506,
+      0.15391017496585846,
+      0.0269785076379776,
+      1.0
+    ],
+    "stds": [
+      40.899105072021484,
+      0.4443422853946686,
+      0.49939367175102234,
+      0.22874660789966583,
+      2.3134706020355225,
+      10.876083374023438,
+      0.3583797812461853,
+      0.3702157437801361,
+      0.033142123371362686,
+      1.0,
+      0.7187618613243103,
+      40.94578552246094,
+      0.445680171251297,
+      0.3510902523994446,
+      0.032682497054338455,
+      1.0
+    ],
+    "clip_min": -5.0,
+    "clip_max": 5.0
+  },
+  "preliminary_thresholds": {
+    "preservation_threshold": 0.7,
+    "pause_candidate_threshold": 0.2,
+    "uncertain_range": [
+      0.2,
+      0.7
+    ],
+    "status": "uncalibrated_preliminary"
+  },
+  "acoustic_guard": {
+    "pause_energy_threshold_db": -55.0,
+    "min_consecutive_pause_windows": 3,
+    "require_mic_pitch_unreliable": true,
+    "description": "Acoustic silence must be confirmed by microphone before pause attenuation is eligible."
+  },
+  "gain_controller_defaults": {
+    "min_gain": 0.5,
+    "attenuation_ramp_ms": 300.0,
+    "restore_ramp_ms": 30.0,
+    "hangover_windows": 2
+  },
+  "training_metadata": {
+    "total_samples": 549,
+    "positive_samples": 228,
+    "negative_samples": 321,
+    "training_accuracy": 0.9089252948760986,
+    "seed": 42
+  }
+}

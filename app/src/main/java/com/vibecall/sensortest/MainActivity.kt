@@ -36,6 +36,7 @@ class MainActivity : AppCompatActivity() {
     private lateinit var shareButton: Button
     private lateinit var playDenoisedButton: Button
     private lateinit var playRawButton: Button
+    private lateinit var playFusionButton: Button
     private lateinit var playbackStatusBadge: TextView
     private lateinit var playbackHelperText: TextView
     private lateinit var statusText: TextView
@@ -47,9 +48,10 @@ class MainActivity : AppCompatActivity() {
     private var latestZip: File? = null
     private var latestDenoisedWav: File? = null
     private var latestRawWav: File? = null
+    private var latestFusionWav: File? = null
     private var mediaPlayer: MediaPlayer? = null
 
-    private enum class AudioTrack { NONE, RAW, DENOISED }
+    private enum class AudioTrack { NONE, RAW, DENOISED, FUSION }
     private var currentlyPlaying = AudioTrack.NONE
 
     private var recordingStartedMs = 0L
@@ -90,6 +92,7 @@ class MainActivity : AppCompatActivity() {
         shareButton = findViewById(R.id.shareButton)
         playDenoisedButton = findViewById(R.id.playDenoisedButton)
         playRawButton = findViewById(R.id.playRawButton)
+        playFusionButton = findViewById(R.id.playFusionButton)
         playbackStatusBadge = findViewById(R.id.playbackStatusBadge)
         playbackHelperText = findViewById(R.id.playbackHelperText)
         statusText = findViewById(R.id.statusText)
@@ -127,14 +130,19 @@ class MainActivity : AppCompatActivity() {
                     } else {
                         "Agree: --"
                     }
+                    val fusionStr = if (telemetry.fusionControllerState != "PRESERVE") {
+                        String.format(Locale.US, "Fusion: %.2f (G:%.2f)", telemetry.fusionConfidence, telemetry.appliedGain)
+                    } else {
+                        String.format(Locale.US, "Fusion: %.2f", telemetry.fusionConfidence)
+                    }
                     rateText.text = String.format(
                         Locale.US,
-                        "%.1f Hz | %s | %s | %s | Rel: %d%%",
+                        "%.1f Hz | %s | %s | %s | %s",
                         telemetry.measuredRateHz,
                         micStr,
                         vibStr,
                         agreeStr,
-                        (telemetry.sensorReliability * 100).toInt()
+                        fusionStr
                     )
                 }
             }
@@ -142,19 +150,26 @@ class MainActivity : AppCompatActivity() {
 
         findViewById<TextView>(R.id.deviceInfoText).text = recorder.deviceSummary()
 
-        // Verify NNAPI NPU acceleration on launch (satisfies Step 2 before recording)
+        // Verify Fusion Model hardware acceleration on launch
         val npuText = findViewById<TextView>(R.id.npuStatusText)
         val npuIcon = findViewById<ImageView>(R.id.npuStatusIcon)
         try {
-            val warmup = FusionGateModel(this)
+            val warmup = FusionConfidenceModel(this)
+            val backend = warmup.getBackendStatus()
             warmup.close()
-            npuText.text = "NPU Hardware Acceleration: Active (NNAPI)"
-            npuText.setTextColor(ContextCompat.getColor(this, R.color.vibe_success_green))
-            npuIcon.setImageResource(R.drawable.ic_shield_check)
-            npuIcon.imageTintList = ContextCompat.getColorStateList(this, R.color.vibe_success_green)
+            npuText.text = "Fusion Backend: $backend"
+            if (backend.contains("NNAPI")) {
+                npuText.setTextColor(ContextCompat.getColor(this, R.color.vibe_success_green))
+                npuIcon.setImageResource(R.drawable.ic_shield_check)
+                npuIcon.imageTintList = ContextCompat.getColorStateList(this, R.color.vibe_success_green)
+            } else {
+                npuText.setTextColor(ContextCompat.getColor(this, R.color.vibe_primary))
+                npuIcon.setImageResource(R.drawable.ic_info)
+                npuIcon.imageTintList = ContextCompat.getColorStateList(this, R.color.vibe_primary)
+            }
         } catch (e: Exception) {
-            Log.w("MainActivity", "NPU init pre-check: ${e.message}")
-            npuText.text = "NPU Status: CPU Fallback (${e.message ?: "Check Logcat"})"
+            Log.w("MainActivity", "Fusion model init check: ${e.message}")
+            npuText.text = "Fusion Backend: CPU Fallback (${e.message ?: "Check Logcat"})"
             npuText.setTextColor(ContextCompat.getColor(this, R.color.vibe_recording_red))
             npuIcon.setImageResource(R.drawable.ic_info)
             npuIcon.imageTintList = ContextCompat.getColorStateList(this, R.color.vibe_recording_red)
@@ -195,8 +210,10 @@ class MainActivity : AppCompatActivity() {
         playRawButton.setOnClickListener {
             playAudio(latestRawWav, AudioTrack.RAW)
         }
+        playFusionButton.setOnClickListener {
+            playAudio(latestFusionWav, AudioTrack.FUSION)
+        }
     }
-
 
     private fun requestPermissionAndStart() {
         if (ContextCompat.checkSelfPermission(this, Manifest.permission.RECORD_AUDIO) ==
@@ -212,6 +229,7 @@ class MainActivity : AppCompatActivity() {
         stopAudioPlayback()
         playDenoisedButton.isEnabled = false
         playRawButton.isEnabled = false
+        playFusionButton.isEnabled = false
         playbackStatusBadge.text = "RECORDING"
         playbackStatusBadge.setTextColor(ContextCompat.getColor(this, R.color.vibe_recording_red))
         playbackHelperText.text = "Recording in progress… Speak normally and keep phone in place."
@@ -253,11 +271,12 @@ class MainActivity : AppCompatActivity() {
                     latestZip = session.zipFile
                     latestDenoisedWav = session.rnnoiseWavFile ?: File(session.sessionDirectory, "microphone_rnnoise.wav")
                     latestRawWav = File(session.sessionDirectory, "microphone.wav")
+                    latestFusionWav = session.fusionWavFile ?: File(session.sessionDirectory, "microphone_fusion.wav")
                     updatePlaybackUi(isPlaying = false, track = AudioTrack.NONE)
 
                     statusText.text = String.format(
                         Locale.US,
-                        "Saved successfully.\nAccelerometer: %,d samples at %.1f Hz\nAudio: %,d samples\nFiles: microphone.wav, microphone_rnnoise.wav\nExport: %s",
+                        "Saved successfully.\nAccelerometer: %,d samples at %.1f Hz\nAudio: %,d samples\nFiles: microphone.wav, microphone_rnnoise.wav, microphone_fusion.wav\nExport: %s",
                         session.accelerometerSamples,
                         session.measuredSensorRateHz,
                         session.audioSamples,
@@ -327,39 +346,52 @@ class MainActivity : AppCompatActivity() {
     private fun updatePlaybackUi(isPlaying: Boolean, track: AudioTrack) {
         val hasDenoised = latestDenoisedWav?.exists() == true
         val hasRaw = latestRawWav?.exists() == true
+        val hasFusion = latestFusionWav?.exists() == true
 
         playDenoisedButton.isEnabled = !recorder.isRecording && hasDenoised
         playRawButton.isEnabled = !recorder.isRecording && hasRaw
+        playFusionButton.isEnabled = !recorder.isRecording && hasFusion
 
         if (isPlaying) {
             when (track) {
                 AudioTrack.DENOISED -> {
-                    playDenoisedButton.text = "⏹ Stop Denoised"
+                    playDenoisedButton.text = "⏹ Stop RNNoise"
                     playRawButton.text = "Play Raw Mic"
-                    playbackStatusBadge.text = "PLAYING DENOISED"
+                    playFusionButton.text = "Play Fusion (Exp.)"
+                    playbackStatusBadge.text = "PLAYING RNNOISE"
                     playbackStatusBadge.setTextColor(ContextCompat.getColor(this, R.color.vibe_success_green))
-                    playbackHelperText.text = "Playing RNNoise denoised audio (neural noise suppression active)."
+                    playbackHelperText.text = "Playing RNNoise baseline audio (verified neural noise suppression)."
                 }
                 AudioTrack.RAW -> {
-                    playDenoisedButton.text = "Play Denoised"
+                    playDenoisedButton.text = "Play RNNoise"
                     playRawButton.text = "⏹ Stop Raw"
+                    playFusionButton.text = "Play Fusion (Exp.)"
                     playbackStatusBadge.text = "PLAYING RAW MIC"
                     playbackStatusBadge.setTextColor(ContextCompat.getColor(this, R.color.vibe_primary))
-                    playbackHelperText.text = "Playing raw microphone audio (original noisy environment)."
+                    playbackHelperText.text = "Playing raw microphone audio (original environment noise)."
+                }
+                AudioTrack.FUSION -> {
+                    playDenoisedButton.text = "Play RNNoise"
+                    playRawButton.text = "Play Raw Mic"
+                    playFusionButton.text = "⏹ Stop Fusion"
+                    playbackStatusBadge.text = "PLAYING FUSION (EXP.)"
+                    playbackStatusBadge.setTextColor(ContextCompat.getColor(this, R.color.vibe_fusion_purple))
+                    playbackHelperText.text = "Playing experimental fusion audio (SafeGainController + RNNoise neural baseline)."
                 }
                 AudioTrack.NONE -> Unit
             }
         } else {
-            playDenoisedButton.text = "Play Denoised"
+            playDenoisedButton.text = "Play RNNoise"
             playRawButton.text = "Play Raw Mic"
-            if (hasDenoised || hasRaw) {
+            playFusionButton.text = "Play Fusion (Exp.)"
+            if (hasDenoised || hasRaw || hasFusion) {
                 playbackStatusBadge.text = "READY TO AUDITION"
                 playbackStatusBadge.setTextColor(ContextCompat.getColor(this, R.color.vibe_primary))
-                playbackHelperText.text = "Tap to A/B test: compare raw mic noise vs. real-time RNNoise denoising."
+                playbackHelperText.text = "Tap to audition: Raw vs RNNoise (baseline) vs Fusion (experimental)."
             } else {
                 playbackStatusBadge.text = "NO RECORDING"
                 playbackStatusBadge.setTextColor(ContextCompat.getColor(this, R.color.vibe_text_secondary))
-                playbackHelperText.text = "Record a test session to audition RNNoise neural noise suppression vs raw audio."
+                playbackHelperText.text = "Record a test session to audition RNNoise baseline vs raw audio vs experimental fusion."
             }
         }
     }

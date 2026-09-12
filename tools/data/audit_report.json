@@ -1,0 +1,123 @@
+{
+  "manifest_file": "tools/dataset_manifest.json",
+  "total_sessions_in_manifest": 12,
+  "included_sessions_count": 6,
+  "excluded_sessions_count": 6,
+  "total_windows_extracted": 821,
+  "training_windows_count": 549,
+  "excluded_uncertain_windows": 272,
+  "label_distribution": {
+    "CONTACT_SPEECH": 220,
+    "AWAY_SPEECH": 58,
+    "SILENCE_STILL": 262,
+    "SILENCE_MOVEMENT": 1,
+    "CONTACT_SPEECH_MOVEMENT": 8,
+    "UNCERTAIN": 272
+  },
+  "session_training_counts": {
+    "20260912_164416_129_cheek_speaking_in_quiet": 85,
+    "20260912_165406_477_cheek_speaking_in_quiet": 84,
+    "20260912_170357_939_cheek_speaking_in_quiet": 117,
+    "20260912_172000_955_cheek_speaking_in_quiet": 88,
+    "20260912_172116_220_cheek_speaking_in_quiet": 93,
+    "20260912_173426_668_cheek_speaking_with_background_noise": 82
+  },
+  "session_audit_details": [
+    {
+      "session_id": "20260912_145725_604_cheek_speaking_in_quiet",
+      "trial_alias": "Trial 7",
+      "status": "EXCLUDED",
+      "reason": "Incompatible schema (10 columns); recorded before 34-column pitch-feature pipeline was implemented. Missing pitch & spectral metrics.",
+      "total_rows": 0,
+      "included_rows": 0
+    },
+    {
+      "session_id": "20260912_153252_897_cheek_speaking_with_background_noise",
+      "trial_alias": "Trial 8",
+      "status": "EXCLUDED",
+      "reason": "Incompatible schema (10 columns); recorded before 34-column pitch-feature pipeline was implemented. Missing pitch & spectral metrics.",
+      "total_rows": 0,
+      "included_rows": 0
+    },
+    {
+      "session_id": "20260912_164416_129_cheek_speaking_in_quiet",
+      "trial_alias": "Trial 9",
+      "status": "INCLUDED",
+      "reason": "Processed 138 frames, 85 training frames mapped",
+      "total_rows": 138,
+      "included_rows": 85
+    },
+    {
+      "session_id": "20260912_165406_477_cheek_speaking_in_quiet",
+      "trial_alias": "Trial 10",
+      "status": "INCLUDED",
+      "reason": "Processed 119 frames, 84 training frames mapped",
+      "total_rows": 119,
+      "included_rows": 84
+    },
+    {
+      "session_id": "20260912_170357_939_cheek_speaking_in_quiet",
+      "trial_alias": "Trial 11",
+      "status": "INCLUDED",
+      "reason": "Processed 141 frames, 117 training frames mapped",
+      "total_rows": 141,
+      "included_rows": 117
+    },
+    {
+      "session_id": "20260912_172000_955_cheek_speaking_in_quiet",
+      "trial_alias": "Trial 12",
+      "status": "INCLUDED",
+      "reason": "Processed 144 frames, 88 training frames mapped",
+      "total_rows": 144,
+      "included_rows": 88
+    },
+    {
+      "session_id": "20260912_172116_220_cheek_speaking_in_quiet",
+      "trial_alias": "Trial 13",
+      "status": "INCLUDED",
+      "reason": "Processed 135 frames, 93 training frames mapped",
+      "total_rows": 135,
+      "included_rows": 93
+    },
+    {
+      "session_id": "20260912_173426_668_cheek_speaking_with_background_noise",
+      "trial_alias": "Trial 14",
+      "status": "INCLUDED",
+      "reason": "Processed 144 frames, 82 training frames mapped",
+      "total_rows": 144,
+      "included_rows": 82
+    },
+    {
+      "session_id": "20260912_170312_821_cheek_speaking_in_quiet",
+      "trial_alias": "Trial 170312",
+      "status": "EXCLUDED",
+      "reason": "Short exploratory test (<4s total duration); excluded from core training set to prioritize standardized 5-phase sessions.",
+      "total_rows": 0,
+      "included_rows": 0
+    },
+    {
+      "session_id": "20260912_170321_155_cheek_speaking_in_quiet",
+      "trial_alias": "Trial 170321",
+      "status": "EXCLUDED",
+      "reason": "Exploratory test; excluded from core training set to prioritize standardized 5-phase sessions.",
+      "total_rows": 0,
+      "included_rows": 0
+    },
+    {
+      "session_id": "20260912_172038_265_cheek_speaking_in_quiet",
+      "trial_alias": "Trial 172038",
+      "status": "EXCLUDED",
+      "reason": "Short intermediate test (<6s); excluded from core training set.",
+      "total_rows": 0,
+      "included_rows": 0
+    },
+    {
+      "session_id": "20260912_172055_575_cheek_speaking_in_quiet",
+      "trial_alias": "Trial 172055",
+      "status": "EXCLUDED",
+      "reason": "Intermediate test (<10s); excluded from core training set.",
+      "total_rows": 0,
+      "included_rows": 0
+    }
+  ]
+}

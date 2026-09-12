@@ -24,4 +24,6 @@
 
     <color name="vibe_info_bg">#F0F9FF</color>
     <color name="vibe_info_stroke">#BAE6FD</color>
+    <color name="vibe_fusion_purple">#7C3AED</color>
+    <color name="vibe_fusion_bg">#F5F3FF</color>
 </resources>
