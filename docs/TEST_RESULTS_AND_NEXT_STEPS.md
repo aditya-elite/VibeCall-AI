@@ -763,4 +763,26 @@ Analysis of live Trial 23 (`sessions/iqoo_sessions/20260912_214314_099_cheek_spe
 4. **4-Way In-App Audition**:
    - The UI provides immediate A/B/C/D listening comparisons: **Play RNNoise**, **Play Raw Mic**, **Play Fusion (Exp.)**, and **Play Clarity (Exp.)**.
 
+### On-Device Hardware Validation: Trial 24 (`20260912_224711_913`)
+A full live recording was conducted on the physical **iQOO 15 (`vivo I2501`)** with background noise to validate `microphone_clarity.wav`, delay-compensated correlation, and runtime telemetry.
+
+| Metric | Measured Value (Trial 24) |
+| :--- | :--- |
+| **Session Folder** | `20260912_224711_913_cheek_speaking_with_background_noise` |
+| **Pipeline Mode** | `FAIR_COMPARISON` |
+| **Microphone Source** | `UNPROCESSED` (platform NS, AEC, AGC disabled) |
+| **Total Duration** | **14.78 s** (236,480 samples @ 16 kHz) |
+| **Audio File Duration Match** | **100% exact match** across all 5 WAV files (473,004 bytes each) |
+| **Inference Telemetry Match** | **116 rows** in `fusion_decisions.csv` $\equiv$ **116 inferences** in `metadata.json` (100% match) |
+| **Mean Inference Latency** | **80.50 µs** (sub-100 µs NNAPI delegate) |
+| **Max Inference Latency** | **149 µs** |
+| **RNNoise Attenuation** | **+4.71 dB** (modifying 98.41% of samples) |
+| **Raw vs RNNoise Unaligned Correlation** | `+0.0231` (effectively unaligned) |
+| **Raw vs RNNoise Aligned Correlation (320 Delay)** | **`+0.6377`** (validates provisional 320-sample delay calibration) |
+| **Clarity Correlation with Raw Speech** | **`+0.7346`** (improved speech presence recovery) |
+| **Speech Level (Raw vs RNNoise vs Clarity)** | Raw: **-55.16 dBFS** \| RNNoise: **-59.87 dBFS** \| Clarity: **-54.89 dBFS** (+4.98 dB restoration) |
+| **Clarity Loudness Gain** | Mean: **+2.15 dB** \| Max: **+6.00 dB** (strictly capped at safety ceiling) |
+| **Observed Peak & Safety Clamping** | Observed Peak: **-34.75 dBFS** (max sample 600) \| Clipped Samples: **0** |
+
+
 
