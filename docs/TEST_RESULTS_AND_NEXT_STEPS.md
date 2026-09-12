@@ -25,6 +25,7 @@ The updated VibeCall app was deployed directly to the flagship **iQOO 15 (`vivo 
 | **Trial 8** | `Cheek - speaking with noise` | 17.22s | **400.00 Hz** | 135 | 0.0536 | `VOICE_COMMUNICATION` | **94.5% Voiced peak preserved (0.2625 vs Raw 0.2777)** |
 | **Trial 9** | `Cheek - speaking in quiet` | 17.58s | **400.00 Hz** | 138 | 0.0987 | `VOICE_COMMUNICATION` | **On-cheek pitch agreement validated (23 reliable frames, Δf down to 0.15 Hz)** |
 | **Trial 10** | `Away-from-cheek negative control` | 15.16s | **400.00 Hz** | 119 | 0.0938 | `VOICE_COMMUNICATION` | **Negative control: agreement drops to 5 frames (0 during 'aaaa')** |
+| **Trial 11** | `Cheek - quiet baseline check` | 17.94s | **400.00 Hz** | 141 | 0.1446 | `VOICE_COMMUNICATION` | **Silence rejection verified: zero false pitch agreements during silence** |
 
 ### Key Hardware Observations on iQOO 15:
 1. **Audio Source Comparison (`UNPROCESSED` vs `VOICE_COMMUNICATION`)**:
@@ -172,6 +173,14 @@ Reliable agreement decreased from **23 frames on-cheek (Trial 9)** to **5 frames
 | 13440.0 ms | 128.79 Hz | **Z** | 122.10 Hz | 6.69 Hz | 0.7049 | 1 | Trailing phonation |
 
 **Conclusion from Negative Control**: The complete absence of pitch agreement during the open vowel "aaaa" when held away from the cheek confirms that true tissue conduction is required for the accelerometer to capture vowel fundamental pitch. The few residual agreements occur during loud nasal phonemes ("mmmm") where acoustic-mechanical chassis coupling is strongest. This supports contact sensitivity but does not yet establish a final classifier.
+
+### Detailed Live Feature Extraction Readings (Trial 11: Silence Rejection Verification on iQOO 15):
+Trial 11 (`20260912_170357_939_cheek_speaking_in_quiet`, extracted via ADB Office Kit) provided a live baseline silence-rejection test on the connected iQOO 15 (141 frames, 17.94s, 7,215 IMU samples at 400.00 Hz):
+- **Acoustic Silence Floor**: Mean `microphone_rms` was $0.000028$ (digital silence floor).
+- **Pitch Estimator Silence Gating**: Yielded **0 false pitch detections** during silence; the energy floor ($RMS \ge 0.002$) successfully prevented spurious fundamental estimation.
+- **Vibration Peak Gating**: The accelerometer picked up subtle tissue/contact vibrations, identifying 47 valid vibration peaks on the Z-axis (mean band RMS $0.0144\text{ m/s}^2$).
+- **Zero False Pitch Agreements**: Because the microphone pitch was correctly gated off, **0 false pitch agreements** were produced (`pitch_agreement_score = 0.0000`, `pitch_agreement_reliable = 0` across all 141 frames).
+- **Physical Significance**: Confirms that accidental mechanical vibrations, heartbeats, or sensor noise floor peaks do not trigger false agreement scores when the user is silent.
 
 ![iQOO Hardware Verification Comparison](images/iqoo_trial_comparison.png)
 
