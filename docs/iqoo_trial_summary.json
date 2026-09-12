@@ -166,5 +166,26 @@
     "noise_suppression_db": 0.0,
     "acc_vib_mean": 0.13765054986965777,
     "acc_vib_max": 2.87878003544529
+  },
+  {
+    "folder": "20260912_153252_897_cheek_speaking_with_background_noise",
+    "label": "Cheek - speaking with background noise",
+    "manufacturer": "vivo",
+    "model": "I2501",
+    "android_release": "16",
+    "accelerometer_name": "lsm6dsvx Accelerometer Non-wakeup",
+    "sensor_rate": 400.0000017323517,
+    "duration_s": 17.22,
+    "raw_rms": 0.022523514926433563,
+    "raw_peak": 0.277740478515625,
+    "gated_rms": 0.0008128428016789258,
+    "gated_peak": 0.01116943359375,
+    "rn_rms": 0.02144536003470421,
+    "rn_peak": 0.26251220703125,
+    "avg_trust": 0.05358344344077287,
+    "inferences": 135,
+    "noise_suppression_db": 0.0,
+    "acc_vib_mean": 0.07726334328154971,
+    "acc_vib_max": 2.31507642899097
   }
 ]

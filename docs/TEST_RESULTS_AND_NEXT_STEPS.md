@@ -22,6 +22,7 @@ The updated VibeCall app was deployed directly to the flagship **iQOO 15 (`vivo 
 | **Trial 5** | `Cheek - speaking with noise` | 15.96s | **400.00 Hz** | 125 | 0.1539 | `VOICE_COMMUNICATION` | **100% Intelligible (Peak 0.2926 vs Raw 0.2864)** |
 | **Trial 6** | `Cheek - speaking with noise` | 15.86s | **400.00 Hz** | 124 | 0.1922 | `VOICE_COMMUNICATION` | **100% Preserved (Peak 0.1813 vs Raw 0.1768)** |
 | **Trial 7** | `Cheek - speaking in quiet` | 15.84s | **400.00 Hz** | 124 | 0.1363 | `VOICE_COMMUNICATION` | **Step 3 live telemetry & features.csv verified** |
+| **Trial 8** | `Cheek - speaking with noise` | 17.22s | **400.00 Hz** | 135 | 0.0536 | `VOICE_COMMUNICATION` | **94.5% Voiced peak preserved (0.2625 vs Raw 0.2777)** |
 
 ### Key Hardware Observations on iQOO 15:
 1. **Audio Source Comparison (`UNPROCESSED` vs `VOICE_COMMUNICATION`)**:
@@ -72,6 +73,23 @@ Trial 7 (`20260912_145725_604_cheek_speaking_in_quiet`) validated the complete S
 2. **Active Voicing (4.0s – 12.0s, $N=62$)**: Natural speech bursts reach $-22.20\text{ dB}$ mic log energy. Bandpass vocal RMS rises to $0.016312\text{ m/s}^2$ and peaks at $0.027114\text{ m/s}^2$. Motion level remains low and stable (mean $0.020276\text{ m/s}^2$).
 3. **Post-Speech Silence (12.5s – 14.5s, $N=16$)**: Mic energy drops back to $-117.93\text{ dB}$, and band RMS returns to $0.007285\text{ m/s}^2$ floor.
 4. **Session Termination & Lift ($> 15.0\text{s}$, $N=6$)**: Gross hand movement spikes `phone_motion_level` to $0.297649\text{ m/s}^2$, clearly segregated from speech vibration.
+
+### Detailed Feature Extraction Readings (Trial 8: Speaking with Noise via Step 3):
+Trial 8 (`20260912_153252_897_cheek_speaking_with_background_noise`, extracted via ADB Office Kit) validated Step 3 under acoustic noise across 135 frames (17.22s, 6,928 IMU samples at 400.00 Hz):
+
+| Feature Dimension | Minimum | Maximum | Mean | Std Dev | Physical / Algorithmic Significance |
+| :--- | :--- | :--- | :--- | :--- | :--- |
+| `microphone_rms` | 0.000000 | 0.088480 | 0.009943 | 0.020241 | Normalized audio RMS level |
+| `microphone_log_energy_db` | -120.00 dB | -21.06 dB | -83.55 dB | 41.18 dB | Audio energy under ambient noise |
+| `accelerometer_band_energy` | 0.000046 | 0.057677 | 0.000952 | 0.006465 | $\text{m}^2/\text{s}^4$ (80–185 Hz vocal resonance power) |
+| `accelerometer_band_rms` | 0.006791 | 0.240159 | 0.014224 | 0.027480 | $\text{m/s}^2$ (4th-order Butterworth bandpass RMS) |
+| `phone_motion_level` | 0.001495 | 0.149227 | 0.026798 | 0.027458 | $\text{m/s}^2$ (5 Hz lowpass hand movement $\sigma$) |
+| `sensor_sample_count` | **41.00** | **41.00** | **41.00** | **0.00** | Exactly 41 samples per 100 ms buffer (nominal $\approx 40$) |
+| `sensor_rate_hz` | **400.00** | **400.00** | **400.00** | **0.00** | Ultra-stable STMicroelectronics hardware IMU clock |
+| `sensor_reliability` | **1.0000** | **1.0000** | **1.0000** | **0.00** | Zero dropped frames or timing gaps |
+| `contact_quality` | 0.0135 | 0.4657 | 0.0278 | 0.0535 | Experimental composite contact heuristic |
+
+- **Acoustic Speech Preservation**: Raw Peak = `0.2777`, RNNoise Denoised Peak = `0.2625` (**94.5% peak retained** with noise suppressed).
 
 ![iQOO Hardware Verification Comparison](images/iqoo_trial_comparison.png)
 
