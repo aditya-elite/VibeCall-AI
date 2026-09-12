@@ -23,6 +23,7 @@ The updated VibeCall app was deployed directly to the flagship **iQOO 15 (`vivo 
 | **Trial 6** | `Cheek - speaking with noise` | 15.86s | **400.00 Hz** | 124 | 0.1922 | `VOICE_COMMUNICATION` | **100% Preserved (Peak 0.1813 vs Raw 0.1768)** |
 | **Trial 7** | `Cheek - speaking in quiet` | 15.84s | **400.00 Hz** | 124 | 0.1363 | `VOICE_COMMUNICATION` | **Step 3 live telemetry & features.csv verified** |
 | **Trial 8** | `Cheek - speaking with noise` | 17.22s | **400.00 Hz** | 135 | 0.0536 | `VOICE_COMMUNICATION` | **94.5% Voiced peak preserved (0.2625 vs Raw 0.2777)** |
+| **Trial 9** | `Cheek - speaking in quiet` | 17.58s | **400.00 Hz** | 138 | 0.0987 | `VOICE_COMMUNICATION` | **Pitch Agreement Validated (Δf down to 0.15 Hz, Score 0.9998 on Z-axis)** |
 
 ### Key Hardware Observations on iQOO 15:
 1. **Audio Source Comparison (`UNPROCESSED` vs `VOICE_COMMUNICATION`)**:
@@ -114,6 +115,39 @@ Trial 8 executed the standardized 5-phase sequence (`silent` – `aaaa` – `sil
    - Accelerometer Band RMS: Mean $0.012829\text{ m/s}^2$.
    - Motion Level: Mean $0.020186\text{ m/s}^2$.
 *(After 15.4s, the user lifted the device to end the recording, registering motion level spikes up to $0.149\text{ m/s}^2$ and band RMS settling).*
+
+### Detailed Live Feature Extraction Readings (Trial 9: Pitch Agreement & 250 ms Spectral Peaks on iQOO 15):
+Trial 9 (`20260912_164416_129_cheek_speaking_in_quiet`, extracted via ADB Office Kit) validated the updated rolling buffer, alignment lag tracking, normalized autocorrelation pitch estimation, and 250 ms FFT spectral peak analysis on the connected iQOO 15 across 138 frames (17.58s total, 7,072 IMU samples at 400.00 Hz):
+
+| Feature Dimension | Minimum | Maximum | Mean | Std Dev | Physical / Algorithmic Significance |
+| :--- | :--- | :--- | :--- | :--- | :--- |
+| `sensor_alignment_lag_ms` | **0.25 ms** | **2.25 ms** | **1.25 ms** | 0.70 ms | Excellent synchronization; zero lag penalties (< 15 ms limit) |
+| `microphone_rms` | 0.000000 | 0.123388 | 0.021045 | 0.027810 | Dynamic speech audio RMS |
+| `microphone_pitch_hz` | 129.07 Hz | 140.22 Hz | 134.15 Hz | 3.42 Hz | Reliable voiced fundamental pitch |
+| `accel_best_axis` | - | - | **Z (92%)** | - | Z-axis dominates vocal tissue vibration |
+| `accel_peak_hz` | 81.62 Hz | 141.08 Hz | 126.85 Hz | 15.20 Hz | 250 ms Hann-windowed FFT spectral peak |
+| `pitch_difference_hz` | **0.15 Hz** | 3.61 Hz | 0.88 Hz | 0.82 Hz | Tight agreement between acoustic and bone-conducted pitch |
+| `pitch_agreement_score` | 0.0000 | **0.9998** | 0.9850 (active) | 0.031 | Gaussian score ($\sigma=8.0\text{ Hz}$) during voicing |
+| `pitch_agreement_reliable` | 0 | 1 | 25 frames | - | 1 asserted when both signals reliable & $\Delta f \le 10\text{ Hz}$ |
+
+#### Audio–Vibration Pitch Agreement Instances in Trial 9:
+During sustained phonation segments, microphone pitch matched the Z-axis accelerometer vibration peak with remarkable precision:
+
+| Window Start (ms) | Mic Pitch (Hz) | Best Axis | Vibration Peak (Hz) | $\Delta f$ (Hz) | Agreement Score | Agreement Reliable |
+| :--- | :--- | :--- | :--- | :--- | :--- | :--- |
+| 3840.0 ms | 133.32 Hz | **Z** | 133.63 Hz | **0.31 Hz** | **0.9993** | 1 |
+| 3968.0 ms | 131.98 Hz | **Z** | 132.64 Hz | **0.67 Hz** | **0.9965** | 1 |
+| 4352.0 ms | 130.59 Hz | **Z** | 129.90 Hz | **0.69 Hz** | **0.9963** | 1 |
+| 4736.0 ms | 131.36 Hz | **Z** | 132.29 Hz | **0.93 Hz** | **0.9933** | 1 |
+| 4864.0 ms | 130.55 Hz | **Z** | 131.52 Hz | **0.96 Hz** | **0.9928** | 1 |
+| 5888.0 ms | 131.40 Hz | **Z** | 131.57 Hz | **0.17 Hz** | **0.9998** | 1 |
+| 10880.0 ms | 136.27 Hz | **Z** | 136.58 Hz | **0.31 Hz** | **0.9993** | 1 |
+| 11008.0 ms | 135.42 Hz | **Z** | 135.71 Hz | **0.28 Hz** | **0.9994** | 1 |
+| 11392.0 ms | 134.27 Hz | **Z** | 134.12 Hz | **0.15 Hz** | **0.9998** | 1 |
+| 11520.0 ms | 134.23 Hz | **Z** | 134.64 Hz | **0.41 Hz** | **0.9987** | 1 |
+| 13696.0 ms | 129.07 Hz | **Z** | 128.79 Hz | **0.29 Hz** | **0.9994** | 1 |
+
+This provides direct empirical proof on the iQOO 15 hardware that bone-conducted vocal vibrations closely track speech fundamental pitch on the Z-axis, with alignment lag staying below 2.3 ms across the entire session.
 
 ![iQOO Hardware Verification Comparison](images/iqoo_trial_comparison.png)
 
