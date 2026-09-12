@@ -786,5 +786,117 @@ A full live recording was conducted on the physical **iQOO 15 (`vivo I2501`)** w
 | **Clarity Loudness Gain** | Mean: **+2.15 dB** \| Max: **+6.00 dB** (strictly capped at safety ceiling) |
 | **Observed Peak & Safety Clamping** | Observed Peak: **-34.75 dBFS** (max sample 600) \| Clipped Samples: **0** |
 
+---
+
+## 10. Step 6: Truthful NNAPI Hardware Acceleration Verification & Trial 25 on iQOO 15
+
+### 10.1 Background & Problem Statement
+In previous trials (Trials 15–24), the app reported:
+> `NNAPI delegate initialized — physical NPU not independently verified`
+
+While the TFLite NNAPI delegate initialized without error and executed 116 inferences with ~80.5 µs latency, Android NNAPI architecture allows work to be distributed across CPU, GPU, DSP, or dedicated accelerators, or transparently fall back to the CPU reference implementation (`nnapi-reference`). The sub-100 µs latency was largely due to the tiny model size (16-D input, two small dense layers) executing on CPU vectorized instructions (XNNPACK), rather than proven NPU silicon execution.
+
+Step 6 demanded rigorous, truthful verification to:
+1. Directly enumerate all NNAPI physical devices via NDK C++ APIs (`libneuralnetworks.so`).
+2. Attempt mandatory execution on a non-CPU accelerator with CPU fallback strictly disabled.
+3. Arrive at exactly one truthful conclusion from:
+   `VERIFIED_NON_CPU_ACCELERATOR` | `CPU_EXECUTION` | `INCONCLUSIVE` | `UNAVAILABLE`.
+4. Ensure 100% fail-open audio safety so speech is never degraded or muted if non-CPU acceleration is unavailable.
+
+### 10.2 Technical Implementation
+
+1. **JNI / NDK Device Enumeration (`NnapiDeviceInspector.kt` & `nnapi_inspector.cpp`)**:
+   - Implemented dynamic loading of `libneuralnetworks.so` to query `ANeuralNetworks_getDeviceCount`, `ANeuralNetworks_getDevice`, `ANeuralNetworksDevice_getName`, `ANeuralNetworksDevice_getType`, `ANeuralNetworksDevice_getVersion`, and `ANeuralNetworksDevice_getFeatureLevel`.
+   - Mapped device types to human-readable categories: `CPU` (2), `GPU` (3), `ACCELERATOR` (4), `DSP` (5), `UNKNOWN` (0).
+   - Flagged `nnapi-reference` strictly as `isCpu = true`.
+2. **Forced Accelerator & Strict CPU Fallback Control (`FusionConfidenceModel.kt`)**:
+   - Added constructor parameters: `requireNonCpuAcceleration = true`, `forcedAcceleratorName: String? = null`, `allowCpuFallback = false`.
+   - Configured `NnApiDelegate.Options()`:
+     - `setAcceleratorName(...)` targeting non-CPU accelerator.
+     - `setUseNnapiCpu(allowCpuFallback)` set to `false`.
+     - `setExecutionPreference(EXECUTION_PREFERENCE_SUSTAINED_SPEED)`.
+   - In mandatory non-CPU mode (`requireNonCpuAcceleration = true`), if no non-CPU device is available or compilation fails, the model does NOT create a CPU interpreter; it reports unavailable (`modelReliable = false`) and fails open safely in `SafeGainController` at unity gain `1.0`.
+3. **500-Inference Verification & Telemetry Benchmark (`AccelerationVerifier.kt`)**:
+   - Runs 10 warm-up inferences and 500 measured benchmark inferences using valid 16-D feature vectors.
+   - Measures mean, p50, p95, and max inference latency.
+   - Evaluates node substitution and execution-plan evidence from logcat.
+4. **App UI & Session Metadata**:
+   - Added Step 6 Acceleration Verification Card to `activity_main.xml` displaying verified status, device name, and benchmark latency.
+   - Added `acceleration_verification` structured JSON object to `metadata.json`.
+
+### 10.3 Empirical Findings on iQOO 15 (`vivo I2501`, Android 16 / API 36, Snapdragon 8 Elite `SM8850`)
+
+#### 1. Discovered NNAPI Device List
+The native NDK query on the physical iQOO 15 returned exactly **1 device**:
+- **Device 0**:
+  - Name: `nnapi-reference`
+  - Type: `CPU` (type code 2)
+  - Version: `compiler251023012501`
+  - Feature Level: `1000008`
+  - `isCpu`: `true`
+- **Total Non-CPU NNAPI Devices**: **0**
+
+#### 2. Root Cause Analysis: Android 16 & Qualcomm Architecture
+Logcat analysis of the system services during NNAPI initialization revealed:
+```text
+HidlServiceManagement: hwservicemanager is not supported on the device. Cannot list manifest for android.hardware.neuralnetworks@1.3::IDevice without hwservicemanager
+```
+`dumpsys neuralnetworks` on Android 16 returns:
+```text
+Can't find service: neuralnetworks
+```
+**Conclusion**:
+- Android 15 and 16 have deprecated the legacy NNAPI HIDL HAL.
+- On the Snapdragon 8 Elite (`SM8850`), Qualcomm does not expose the Hexagon NPU through the deprecated Android NNAPI HAL.
+- Instead, Qualcomm provides hardware NPU execution via the **Qualcomm Neural Network (QNN) SDK** and the **Hexagon Tensor Processor (HTP) Direct API**.
+- Consequently, the only NNAPI device exposed to user-space applications on this device is Google's CPU reference implementation (`nnapi-reference`).
+
+#### 3. Forced Hardware Mode Behavior
+When non-CPU acceleration is enforced (`requireNonCpuAcceleration = true`, `setUseNnapiCpu(false)`):
+- TFLite cannot allocate nodes to `nnapi-reference` because CPU usage is prohibited.
+- Because there is no non-CPU device to select, compilation on a non-CPU accelerator fails truthfully.
+- The verifier records:
+  - `status`: **`CPU_EXECUTION`** (or `UNAVAILABLE` for non-CPU acceleration)
+  - `reason`: `"Only CPU NNAPI devices available on this platform (nnapi-reference). Non-CPU acceleration unavailable."`
+
+### 10.4 Live Hardware Validation: Trial 25 (`20260913_005252_259`)
+
+A live recording session was captured on the iQOO 15 to verify end-to-end runtime behavior, fail-open audio preservation, and session metadata under mandatory non-CPU verification:
+
+| Metric / Parameter | Value (Trial 25 on iQOO 15) |
+| :--- | :--- |
+| **Session Folder** | `20260913_005252_259_cheek_speaking_with_background_noise` |
+| **Device Model / OS** | `vivo I2501` (iQOO 15), Android 16 (API 36) |
+| **Duration** | **83.62 s** (1,337,920 audio samples @ 16 kHz) |
+| **IMU Samples / Rate** | **33,490 samples** at **400.00 Hz** (ST LSM6DSVX) |
+| **RNNoise Performance** | 8,362 frames, **0 failures**, +2.26 dB attenuation, input RMS 117.3, output RMS 90.5 |
+| **Aligned Correlation (320-delay)** | **`+0.8369`** (strong speech correlation with raw audio) |
+| **Clarity Enhancement** | Enabled, 0 clipped samples, +0.23 dB mean loudness gain, max peak -17.77 dBFS |
+| **Step 6 Verification Status** | **`CPU_EXECUTION`** |
+| **Step 6 Status Reason** | `"Only CPU NNAPI devices available on this platform (nnapi-reference). Non-CPU acceleration unavailable."` |
+| **Discovered NNAPI Devices** | `[{"name": "nnapi-reference", "type": "CPU", "version": "compiler251023012501", "feature_level": 1000008, "is_cpu": true}]` |
+| **Selected Device** | `null` (no non-CPU device available) |
+| **CPU Fallback Allowed** | `false` |
+| **Fusion Decisions CSV Count** | **655 rows** |
+| **Fusion Controller State** | **100% PRESERVE at Gain 1.0000** |
+| **Fail-Open Safety Check** | **PASSED**: Zero audio muting or speech corruption during model unavailability |
+| **Audio File Integrity** | All 5 WAV files (`microphone.wav`, `gated_microphone.wav`, `microphone_rnnoise.wav`, `microphone_fusion.wav`, `microphone_clarity.wav`) produced cleanly with matching duration |
+
+### 10.5 Final Step 6 Decision
+- **Final Decision**: **`CPU_EXECUTION`**
+- **Truthful Assessment**:
+  - The model runs on CPU vectorized execution (XNNPACK / `nnapi-reference`).
+  - There are **zero** non-CPU NNAPI accelerators exposed on the iQOO 15 under Android 16.
+  - Per the strict requirement to never convert `INCONCLUSIVE` or `CPU_EXECUTION` into `VERIFIED_NON_CPU_ACCELERATOR`, the system truthfully reports `CPU_EXECUTION`.
+
+### 10.6 Strategic Recommendation: Future Qualcomm QNN / HTP Migration
+To unlock true physical Hexagon NPU acceleration on the Snapdragon 8 Elite (`SM8850`):
+1. **Migrate from NNAPI to Qualcomm QNN SDK / HTP Direct Delegate**:
+   - Qualcomm provides `libQnnHtp.so` and the TFLite QNN Delegate (`libtensorflowlite_gpu_delegate.so` / `libQnnTfliteDelegate.so`).
+   - Using the Qualcomm QNN HTP delegate will allow `fusion_confidence_model.tflite` to run directly on the Snapdragon 8 Elite Hexagon NPU.
+2. **Preserve Current Fail-Open Safety Architecture**:
+   - The existing fallback and fail-open design pattern implemented in `FusionConfidenceModel.kt` and `SafeGainController.kt` ensures seamless transition to QNN without any risk of audio dropouts or voice degradation.
+
+
 
 

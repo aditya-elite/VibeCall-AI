@@ -52,6 +52,17 @@ class MainActivity : AppCompatActivity() {
     private lateinit var radioModeFair: RadioButton
     private lateinit var modeCharacterizationStatus: TextView
 
+    // Step 6 UI Components
+    private lateinit var step6AcceleratorText: TextView
+    private lateinit var step6DeviceTypeText: TextView
+    private lateinit var step6DriverVersionText: TextView
+    private lateinit var step6SelectionForcedText: TextView
+    private lateinit var step6FallbackAllowedText: TextView
+    private lateinit var step6InferenceCountText: TextView
+    private lateinit var step6LatencyText: TextView
+    private lateinit var step6StatusBadge: TextView
+    private lateinit var step6ReasonText: TextView
+
     private var latestZip: File? = null
     private var latestDenoisedWav: File? = null
     private var latestRawWav: File? = null
@@ -114,6 +125,16 @@ class MainActivity : AppCompatActivity() {
         radioModeFair = findViewById(R.id.radioModeFair)
         modeCharacterizationStatus = findViewById(R.id.modeCharacterizationStatus)
 
+        step6AcceleratorText = findViewById(R.id.step6AcceleratorText)
+        step6DeviceTypeText = findViewById(R.id.step6DeviceTypeText)
+        step6DriverVersionText = findViewById(R.id.step6DriverVersionText)
+        step6SelectionForcedText = findViewById(R.id.step6SelectionForcedText)
+        step6FallbackAllowedText = findViewById(R.id.step6FallbackAllowedText)
+        step6InferenceCountText = findViewById(R.id.step6InferenceCountText)
+        step6LatencyText = findViewById(R.id.step6LatencyText)
+        step6StatusBadge = findViewById(R.id.step6StatusBadge)
+        step6ReasonText = findViewById(R.id.step6ReasonText)
+
         recordingModeRadioGroup.setOnCheckedChangeListener { _, checkedId ->
             if (checkedId == R.id.radioModeFair) {
                 modeCharacterizationStatus.text = "Target Mode: Fair RNNoise A/B (UNPROCESSED/VOICE_RECOGNITION, effects disabled)"
@@ -175,7 +196,7 @@ class MainActivity : AppCompatActivity() {
         val npuText = findViewById<TextView>(R.id.npuStatusText)
         val npuIcon = findViewById<ImageView>(R.id.npuStatusIcon)
         try {
-            val warmup = FusionConfidenceModel(this)
+            val warmup = FusionConfidenceModel(this, requireNonCpuAcceleration = false, allowCpuFallback = true)
             val backend = warmup.getBackendStatus()
             warmup.close()
             npuText.text = "Fusion Backend: $backend"
@@ -203,6 +224,46 @@ class MainActivity : AppCompatActivity() {
             npuIcon.setImageResource(R.drawable.ic_info)
             npuIcon.imageTintList = ContextCompat.getColorStateList(this, R.color.vibe_recording_red)
         }
+
+        runStep6Verification()
+    }
+
+    private fun runStep6Verification() {
+        Thread {
+            val logFile = File(getExternalFilesDir(null), "nnapi_full_log.txt")
+            val result = AccelerationVerifier.runVerification(this, executionPlanLogFile = logFile)
+            recorder.updateAccelerationVerification(result)
+
+            runOnUiThread {
+                step6AcceleratorText.text = result.selectedDeviceName ?: "None"
+                step6DeviceTypeText.text = result.selectedDeviceType ?: "None"
+                step6DriverVersionText.text = result.selectedDeviceVersion ?: "unknown"
+                step6SelectionForcedText.text = if (result.deviceSelectionForced) "YES" else "NO"
+                step6FallbackAllowedText.text = if (result.cpuFallbackAllowed) "YES" else "NO (Disabled)"
+                step6InferenceCountText.text = "${result.measuredInferenceCount} (${result.failureCount} fail)"
+                step6LatencyText.text = String.format(Locale.US, "%.1f / %d µs", result.meanLatencyUs, result.p95LatencyUs)
+                step6ReasonText.text = result.reason
+
+                when (result.status) {
+                    AccelerationStatus.VERIFIED_NON_CPU_ACCELERATOR -> {
+                        step6StatusBadge.text = "VERIFIED"
+                        step6StatusBadge.setTextColor(ContextCompat.getColor(this, R.color.vibe_success_green))
+                    }
+                    AccelerationStatus.INCONCLUSIVE -> {
+                        step6StatusBadge.text = "INCONCLUSIVE"
+                        step6StatusBadge.setTextColor(ContextCompat.getColor(this, R.color.vibe_amber))
+                    }
+                    AccelerationStatus.CPU_EXECUTION -> {
+                        step6StatusBadge.text = "CPU EXECUTION"
+                        step6StatusBadge.setTextColor(ContextCompat.getColor(this, R.color.vibe_recording_red))
+                    }
+                    AccelerationStatus.UNAVAILABLE -> {
+                        step6StatusBadge.text = "UNAVAILABLE"
+                        step6StatusBadge.setTextColor(ContextCompat.getColor(this, R.color.vibe_recording_red))
+                    }
+                }
+            }
+        }.start()
 
         // Setup enhanced presets with icons, badges and descriptions
         val presets = listOf(

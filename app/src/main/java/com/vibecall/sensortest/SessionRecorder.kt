@@ -228,6 +228,13 @@ class SessionRecorder(
     private var fusionGateModel: FusionGateModel? = null
     private var gatedPcmFile: File? = null
     private var gatedWavFile: File? = null
+
+    // Step 6 NNAPI Acceleration Verification
+    private var latestAccelerationVerification: AccelerationVerificationResult? = null
+
+    fun updateAccelerationVerification(result: AccelerationVerificationResult) {
+        latestAccelerationVerification = result
+    }
     @Volatile
     private var latestAccelX: Float = 0f
     @Volatile
@@ -464,9 +471,15 @@ class SessionRecorder(
             .onFailure { Log.w("SessionRecorder", "Failed to initialize RnnoiseProcessor", it) }
             .getOrNull()
 
-        fusionConfidenceModel = runCatching { FusionConfidenceModel(context) }
-            .onFailure { Log.w("SessionRecorder", "Failed to initialize FusionConfidenceModel", it) }
-            .getOrNull()
+        fusionConfidenceModel = runCatching {
+            FusionConfidenceModel(
+                context = context,
+                requireNonCpuAcceleration = true,
+                forcedAcceleratorName = latestAccelerationVerification?.selectedDeviceName,
+                allowCpuFallback = false
+            )
+        }.onFailure { Log.w("SessionRecorder", "Failed to initialize FusionConfidenceModel", it) }
+        .getOrNull()
 
         latestBackendStatus = fusionConfidenceModel?.getBackendStatus() ?: "Model unavailable"
         safeGainController.reset()
@@ -1547,6 +1560,11 @@ class SessionRecorder(
             put("fusion_controller_min_gain", safeGainController.minimumGain)
             put("fusion_controller_pause_energy_threshold_db", safeGainController.pauseEnergyThresholdDb)
             put("fusion_controller_min_pause_windows", safeGainController.minConsecutivePauseWindows)
+
+            // Step 7: Truthful Acceleration Verification Metadata
+            val accelVerif = latestAccelerationVerification ?: AccelerationVerifier.runVerification(context)
+            put("acceleration_verification", accelVerif.toJson())
+
             put("manufacturer", Build.MANUFACTURER)
             put("model", Build.MODEL)
             put("android_release", Build.VERSION.RELEASE)

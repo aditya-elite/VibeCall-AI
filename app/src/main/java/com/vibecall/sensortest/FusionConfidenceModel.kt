@@ -48,7 +48,10 @@ data class FusionInferenceResult(
 class FusionConfidenceModel(
     context: Context,
     modelFilename: String = "fusion_confidence_model.tflite",
-    metadataFilename: String = "fusion_model_metadata.json"
+    metadataFilename: String = "fusion_model_metadata.json",
+    val requireNonCpuAcceleration: Boolean = true,
+    val forcedAcceleratorName: String? = null,
+    val allowCpuFallback: Boolean = false
 ) {
 
     private var interpreter: Interpreter? = null
@@ -57,6 +60,26 @@ class FusionConfidenceModel(
     private var backendStatus: String = "Model uninitialized"
     private var isModelInitialized: Boolean = false
     private var isMetadataValid: Boolean = false
+
+    // Acceleration metadata and verification flags
+    var selectedDeviceName: String? = null
+        private set
+    var selectedDeviceType: String? = null
+        private set
+    var selectedDeviceVersion: String? = null
+        private set
+    var selectedDeviceFeatureLevel: Long = 0L
+        private set
+    var isDeviceSelectionForced: Boolean = false
+        private set
+    var isCpuFallbackAllowed: Boolean = false
+        private set
+    var isFullGraphSupported: Boolean = false
+        private set
+    var isCompilationSucceeded: Boolean = false
+        private set
+    var initializationError: String? = null
+        private set
 
     // Normalization constants loaded strictly from validated metadata
     private val means = FloatArray(INPUT_DIM)
@@ -91,6 +114,7 @@ class FusionConfidenceModel(
             if (!valid) {
                 isMetadataValid = false
                 lastError = errorMsg ?: "Metadata validation failed"
+                initializationError = lastError
                 backendStatus = "Model unavailable ($lastError)"
                 Log.e(TAG, "Strict metadata validation rejected $filename: $lastError")
                 return
@@ -107,6 +131,7 @@ class FusionConfidenceModel(
         } catch (e: Exception) {
             isMetadataValid = false
             lastError = "Metadata file load error: ${e.message}"
+            initializationError = lastError
             backendStatus = "Model unavailable ($lastError)"
             Log.e(TAG, "Failed to read or parse metadata asset $filename: ${e.message}", e)
         }
@@ -121,13 +146,50 @@ class FusionConfidenceModel(
             isModelInitialized = false
             failureCount++
             lastError = "Model file load failed: ${e.message}"
+            initializationError = lastError
             Log.e(TAG, "Could not open $filename from assets.", e)
             return
         }
 
-        // Try NNAPI execution first
+        // Determine target non-CPU accelerator
+        val availableDevices = runCatching { NnapiDeviceInspector.getAvailableDevices() }.getOrDefault(emptyList())
+        val targetDevice = if (!forcedAcceleratorName.isNullOrBlank()) {
+            availableDevices.firstOrNull { it.name == forcedAcceleratorName }
+                ?: NnapiDeviceInfo(forcedAcceleratorName, "ACCELERATOR", "forced", 0L, false)
+        } else {
+            NnapiDeviceInspector.findBestNonCpuDevice(availableDevices)
+        }
+
+        if (targetDevice != null) {
+            selectedDeviceName = targetDevice.name
+            selectedDeviceType = targetDevice.type
+            selectedDeviceVersion = targetDevice.version
+            selectedDeviceFeatureLevel = targetDevice.featureLevel
+        }
+
+        if (requireNonCpuAcceleration && targetDevice == null && availableDevices.isNotEmpty() && availableDevices.all { it.isCpu || it.type == "CPU" }) {
+            val err = "Mandatory non-CPU acceleration requested, but only CPU NNAPI devices available (${availableDevices.joinToString { it.name }})"
+            backendStatus = "Model unavailable ($err)"
+            isModelInitialized = false
+            failureCount++
+            lastError = err
+            initializationError = err
+            Log.e(TAG, err)
+            return
+        }
+
+        // Try NNAPI execution
         try {
-            val delegate = NnApiDelegate()
+            val nnapiOptions = NnApiDelegate.Options().apply {
+                if (targetDevice != null && !targetDevice.isCpu && targetDevice.type != "CPU") {
+                    setAcceleratorName(targetDevice.name)
+                    isDeviceSelectionForced = true
+                }
+                setUseNnapiCpu(allowCpuFallback)
+                isCpuFallbackAllowed = allowCpuFallback
+                setExecutionPreference(NnApiDelegate.Options.EXECUTION_PREFERENCE_SUSTAINED_SPEED)
+            }
+            val delegate = NnApiDelegate(nnapiOptions)
             nnApiDelegate = delegate
             val options = Interpreter.Options().apply {
                 addDelegate(delegate)
@@ -140,11 +202,31 @@ class FusionConfidenceModel(
                 return
             }
             interpreter = interp
-            backendStatus = BACKEND_NNAPI_UNVERIFIED
+            isCompilationSucceeded = true
+            isFullGraphSupported = true
+            backendStatus = if (isDeviceSelectionForced && targetDevice != null) {
+                "NNAPI forced accelerator: ${targetDevice.name} (${targetDevice.type})"
+            } else {
+                BACKEND_NNAPI_UNVERIFIED
+            }
             isModelInitialized = true
             Log.i(TAG, "FusionConfidenceModel initialized with NNAPI delegate ($backendStatus).")
         } catch (e: Exception) {
-            Log.w(TAG, "NNAPI delegate failed to initialize; falling back to CPU interpreter.", e)
+            if (requireNonCpuAcceleration) {
+                val err = "Mandatory non-CPU NNAPI acceleration failed: ${e.message}"
+                Log.e(TAG, err, e)
+                nnApiDelegate?.close()
+                nnApiDelegate = null
+                interpreter = null
+                backendStatus = "Model unavailable ($err)"
+                isModelInitialized = false
+                failureCount++
+                lastError = err
+                initializationError = err
+                return
+            }
+
+            Log.w(TAG, "NNAPI delegate failed to initialize; falling back to CPU interpreter (developer option).", e)
             try {
                 nnApiDelegate?.close()
                 nnApiDelegate = null
@@ -164,10 +246,12 @@ class FusionConfidenceModel(
                 isModelInitialized = false
                 failureCount++
                 lastError = "CPU init failed: ${cpuEx.message}"
+                initializationError = lastError
                 Log.e(TAG, "Failed to initialize CPU fallback interpreter for $filename.", cpuEx)
             }
         }
     }
+
 
     private fun verifyInterpreterTensors(interp: Interpreter): Boolean {
         try {

@@ -7,12 +7,24 @@ android {
     namespace = "com.vibecall.sensortest"
     compileSdk = 35
 
+    ndkVersion = "27.0.12077973"
+
     defaultConfig {
         applicationId = "com.vibecall.sensortest"
         minSdk = 26
         targetSdk = 35
         versionCode = 2
         versionName = "0.2.0"
+        ndk {
+            abiFilters += listOf("arm64-v8a", "x86_64")
+        }
+    }
+
+    externalNativeBuild {
+        cmake {
+            path = file("src/main/cpp/CMakeLists.txt")
+            version = "3.22.1"
+        }
     }
 
     buildTypes {
@@ -34,6 +46,9 @@ android {
     }
     androidResources {
         noCompress += "tflite"
+    }
+    testOptions {
+        unitTests.isReturnDefaultValues = true
     }
 }
 
