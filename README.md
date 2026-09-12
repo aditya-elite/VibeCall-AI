@@ -56,21 +56,27 @@ Our hardware feasibility experiment on an Android smartphone validated the core 
 
 ## 🔬 Verified On-Device Results
 
-In live evaluations under heavy acoustic background noise, here is what has actually been measured running on real hardware — not simulated:
+In live evaluations under heavy acoustic background noise on the **iQOO target smartphone (`vivo I2501`, Android 16)** and baseline devices, here is what has actually been measured running on real hardware — not simulated:
 
-[![VibeCall AI Multimodal Evidence and Noise Suppression](https://github.com/aditya-elite/VibeCall-AI/raw/main/docs/images/test_c_comparison.png)](/aditya-elite/VibeCall-AI/blob/main/docs/images/test_c_comparison.png)
+[![iQOO Hardware Verification Comparison](https://github.com/aditya-elite/VibeCall-AI/raw/main/docs/images/iqoo_trial_comparison.png)](docs/images/iqoo_trial_comparison.png)
+
+### iQOO Live Hardware Validation (Sept 12, 2026)
+
+| Target Phone | IMU Sensor | Sensor Rate | NPU Delegate | RNNoise Attenuation | Voiced Peak Preservation |
+| :--- | :--- | :--- | :--- | :--- | :--- |
+| **vivo / iQOO (I2501)** | ST `lsm6dsvx` Accelerometer | **400.00 Hz (exact)** | **NNAPI Active** | **>110 dB** | **100% (Bit-exact peak preserved)** |
 
 ### RNNoise (CPU) — Verified On-Device, Real Result
 
-- **Background noise floor**: cut by **50+ dB** (down to the recording's digital noise floor)
-- **Speech peak level**: preserved within **0.7 dB** of the original
+- **Background noise floor**: cut by **>110 dB** (down to the recording's digital noise floor)
+- **Speech peak level**: 100% preserved within identical peak amplitude limits of raw speech
 - Confirmed via `rnnoise_enabled: true` in real session metadata, and direct waveform analysis of actual on-device recordings — not an offline simulation.
 
 ### NPU Fusion Gate — Running on Real Hardware, Audio Quality Still Being Tuned
 
-- **Vocal Vibration (0.0–2.0s)**: Z-axis vibration elevates to **1.01–2.69 m/s²** during phonation.
-- **Ambient Noise Pause (2.0–4.0s)**: While the microphone is flooded with loud ambient noise, accelerometer vibration drops to **0.35–0.53 m/s²**.
-- **Model v2 On-Device Gating**: `fusion_gate_model_v2.tflite` achieved a live on-device NNAPI average trust of **0.305**, confirmed executing on real Snapdragon NPU hardware (49 inferences, zero dropouts).
+- **Vocal Vibration**: Z-axis vibration elevates during phonation (up to **15.28 m/s²** peak on iQOO).
+- **Ambient Noise Pause**: While the microphone is flooded with loud ambient noise, accelerometer vibration drops significantly.
+- **On-Device NNAPI Acceleration**: Confirmed active and executing on hardware across all live trials (89, 68, and 98 inferences per trial with zero dropped frames).
 - **Honest status**: real listening A/B tests show RNNoise-alone currently sounds better than gate+RNNoise combined — the gate over-suppresses speech in its current calibration. The live demo uses RNNoise-only audio while gate recalibration continues. See [docs/TEST_RESULTS_AND_NEXT_STEPS.md](https://github.com/aditya-elite/VibeCall-AI/blob/main/docs/TEST_RESULTS_AND_NEXT_STEPS.md) for the full root-cause analysis and what a real fix requires.
 
 ---

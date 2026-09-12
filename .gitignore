@@ -10,9 +10,23 @@ captures/
 .externalNativeBuild/
 .cxx/
 
-# Environment-specific configuration
+# Environment-specific configuration & secrets
 local.properties
 secrets.properties
+key.properties
+*.env
+*.env.*
+secrets.json
+google-services.json
+GoogleService-Info.plist
+
+# Signing keys & keystores
+*.jks
+*.keystore
+*.key
+*.pem
+*.p12
+*.pkcs12
 
 # Generated outputs & packages
 *.apk
