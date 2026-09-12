@@ -43,6 +43,12 @@ class RnnoiseProcessor(
 
     val frameSize: Int = FRAME_SIZE_48K
 
+    private var totalFramesProcessed: Long = 0L
+    private var totalFrameFailures: Long = 0L
+
+    fun getFrameCount(): Long = totalFramesProcessed
+    fun getFailureCount(): Long = totalFrameFailures
+
     // Temporary reusable buffers to minimize GC allocations during streaming
     private val inFrame48k = FloatArray(FRAME_SIZE_48K)
     private val outFrame48k = FloatArray(FRAME_SIZE_48K)
@@ -60,7 +66,13 @@ class RnnoiseProcessor(
             "RNNoise requires exactly $FRAME_SIZE_48K samples (10ms @ 48kHz)"
         }
         val out = FloatArray(FRAME_SIZE_48K)
-        rnnoise.processFrame(frame48k, out)
+        try {
+            rnnoise.processFrame(frame48k, out)
+            totalFramesProcessed++
+        } catch (e: Throwable) {
+            totalFrameFailures++
+            System.arraycopy(frame48k, 0, out, 0, FRAME_SIZE_48K)
+        }
         return out
     }
 
@@ -99,7 +111,13 @@ class RnnoiseProcessor(
         for (f in 0 until numFrames) {
             val offset = f * FRAME_SIZE_48K
             System.arraycopy(buffer48k, offset, inFrame48k, 0, FRAME_SIZE_48K)
-            rnnoise.processFrame(inFrame48k, outFrame48k)
+            try {
+                rnnoise.processFrame(inFrame48k, outFrame48k)
+                totalFramesProcessed++
+            } catch (e: Throwable) {
+                totalFrameFailures++
+                System.arraycopy(inFrame48k, 0, outFrame48k, 0, FRAME_SIZE_48K)
+            }
 
             // Downsample 48kHz -> 16kHz (every 3rd sample)
             for (i in 0 until FRAME_SIZE_16K) {
@@ -134,7 +152,13 @@ class RnnoiseProcessor(
         // Zero-fill inFrame48k and copy the leftover
         inFrame48k.fill(0f)
         System.arraycopy(buffer48k, 0, inFrame48k, 0, buffer48kCount)
-        rnnoise.processFrame(inFrame48k, outFrame48k)
+        try {
+            rnnoise.processFrame(inFrame48k, outFrame48k)
+            totalFramesProcessed++
+        } catch (e: Throwable) {
+            totalFrameFailures++
+            System.arraycopy(inFrame48k, 0, outFrame48k, 0, FRAME_SIZE_48K)
+        }
 
         val outputSamples16k = (buffer48kCount + 2) / 3
         val output16k = ShortArray(outputSamples16k)

@@ -32,6 +32,8 @@ The updated VibeCall app was deployed directly to the flagship **iQOO 15 (`vivo 
 | **Trial 15** | `Cheek - speaking with noise` | 20.28s | **400.00 Hz** | 159 | 0.844 (Gain) | `VOICE_COMMUNICATION` | **Live Step 4 Fusion verified: 12 hangover protections, 0 audio clips, 84 µs latency** |
 | **Trial 16** | `Cheek - speaking with noise` | 21.48s | **400.00 Hz** | 168 | 0.867 (Gain) | `VOICE_COMMUNICATION` | **Live Step 4 Fusion verified: 13 hangover protections, 17 pitch agreements** |
 | **Trial 17** | `Cheek - speaking with noise` | 17.84s | **400.00 Hz** | 140 | 0.905 (Gain) | `VOICE_COMMUNICATION` | **Live Step 4 Fusion verified: 12 hangover protections, smooth pause attenuation** |
+| **Trial 18** | `Cheek - speaking with noise` | 12.16s | **400.00 Hz** | 95 | 0.1894 | `UNPROCESSED` (Fair Mode) | **Fair RNNoise validated: +18.71 dB attenuation, effects disabled, 95 CSV inferences recorded** |
+| **Trial 19** | `Cheek - speaking with noise` | 117.82s | **400.00 Hz** | 921 | 0.1816 | `VOICE_COMMUNICATION` (Stable) | **Stable Telephony default validated: 921 CSV inferences recorded, hardware effects active** |
 
 ### Key Hardware Observations on iQOO 15:
 1. **Audio Source Comparison (`UNPROCESSED` vs `VOICE_COMMUNICATION`)**:
@@ -621,8 +623,8 @@ Immediately following APK deployment to the iQOO 15, live verification sessions 
 | **Inference Latency (Mean)** | **84.2 µs** (0.084 ms) | **88.7 µs** (0.089 ms) | **80.8 µs** (0.081 ms) | **<0.1 ms inference execution** |
 | **Inference Latency (p50 / p95)**| 79.0 µs / 133.0 µs | 77.0 µs / 159.0 µs | 78.0 µs / 134.0 µs | Deterministic real-time budget |
 | **Inference Latency (Max)** | 374.0 µs (0.37 ms) | 227.0 µs (0.23 ms) | 158.0 µs (0.16 ms) | 0.3% of 128 ms audio window |
-| **Hangover Protection Windows** | **12 windows** (600 ms total) | **13 windows** (650 ms total) | **12 windows** (600 ms total) | **Word endings preserved at gain 1.0000** |
-| **Acoustic Speech Guard Hits** | **79 windows** (gain 1.0000) | **88 windows** (gain 1.0000) | **86 windows** (gain 1.0000) | Immediate fail-open on audible speech |
+| **Hangover Protection Windows** | **12 windows** (256 ms per offset event) | **13 windows** (256 ms per offset event) | **12 windows** (256 ms per offset event) | **Word endings preserved at gain 1.0000** |
+| **Acoustic Speech Guard Hits** | **79 windows** (gain 1.0000) | **88 windows** (gain 1.0000) | **86 windows** (gain 1.0000) | Fail-open within 128 ms window boundary on audible speech |
 | **Sensor / Motion Guard Hits** | 1 sensor, 0 motion | 1 sensor, 1 motion | 1 sensor, 0 motion | Preserved unity gain during startup/motion |
 | **Confirmed Sustained Pauses** | 55 windows (attenuated to 0.50) | 48 windows (attenuated to 0.50) | 31 windows (attenuated to 0.50) | Gradual attenuation during dead silence |
 | **Pitch Agreement Frames** | 8 frames | 17 frames | 3 frames | Vocal fundamental detected in noise |
@@ -642,9 +644,40 @@ Window 10 [1280-1408ms]: PAUSE_PENDING: window 2 of 3 required (gain 1.0000)
 Window 11 [1408-1536ms]: ATTENUATING: confirmed sustained pause (gain 1.0000 -> 0.8400)
 ```
 This empirical trace proves that:
-1. Speech is never cut: acoustic guard and hangover keep gain strictly at `1.0000`.
+1. Voiced speech peaks are preserved: acoustic guard and hangover keep gain strictly at `1.0000` during speech segments (formal listening tests are required for comprehensive perceptual speech quality).
 2. Attenuation only occurs after 3 consecutive silence windows *following* hangover expiry.
 3. Audio slew interpolation smoothly moves gain between frames with zero audible clicks or clipping.
+
+### 7.9 Telemetry Repair & Fair RNNoise A/B Benchmarking (Trials 18 & 19)
+
+Following on-device telemetry fixes and the introduction of selectable pipeline modes, two live sessions were recorded and audited on the iQOO 15 hardware:
+
+| Parameter / Diagnostic | Trial 18: Fair RNNoise A/B Mode | Trial 19: Stable Telephony Mode (Default) |
+| :--- | :--- | :--- |
+| **Selected Mode** | `FAIR_COMPARISON` | `STABLE_COMMUNICATION` |
+| **Audio Source Selected** | `UNPROCESSED` | `VOICE_COMMUNICATION` |
+| **Microphone Characterization** | `"Unprocessed acoustic microphone"` | `"Platform-processed microphone"` |
+| **NoiseSuppressor Status** | Available: `true`, Enabled: `false` | Available: `true`, Enabled: `true` |
+| **EchoCanceler Status** | Available: `true`, Enabled: `false` | Available: `true`, Enabled: `true` |
+| **Duration / Sample Count** | 12.16 s (194,560 audio samples) | 117.82 s (1,885,120 audio samples) |
+| **IMU Sampling Rate** | **400.00 Hz** (4,890 samples) | **400.00 Hz** (47,163 samples) |
+| **Fusion Decisions CSV Rows** | **95 rows** | **921 rows** |
+| **`fusion_confidence_inference_count`** | **95** (Exact match with CSV) | **921** (Exact match with CSV) |
+| **`legacy_trust_inference_count`** | 95 (Separated from fusion confidence) | 921 (Separated from fusion confidence) |
+| **Fusion Inference Latency** | Mean **79.4 µs**, Max 147 µs | Mean **85.7 µs**, Max 505 µs |
+| **RNNoise Input RMS** | 27.69 | 258.73 |
+| **RNNoise Output RMS** | 3.21 | 164.75 |
+| **RNNoise Measured Attenuation** | **+18.71 dB** | **+3.92 dB** |
+| **RNNoise Sample Difference %** | **98.05%** of samples altered | **45.30%** of samples altered |
+
+#### Key Scientific Insights:
+1. **Root Cause of RNNoise Contrast Confirmed**:
+   - In `STABLE_COMMUNICATION` mode, Android's platform `NoiseSuppressor` and `AcousticEchoCanceler` are active at the HAL/DSP level, reducing background noise before user-space processing and leaving only ~3.9 dB headroom for RNNoise.
+   - In `FAIR_COMPARISON` mode, using `UNPROCESSED` with platform effects disabled allows RNNoise to operate on raw acoustic noise, achieving a massive **+18.71 dB attenuation** and altering **98.05%** of samples.
+2. **Telemetry Accuracy Fully Restored**:
+   - `metadata.json` now captures model runtime statistics prior to closing the TFLite models.
+   - The duplicate `fusion_inference_count` key has been removed: `legacy_trust_inference_count` and `fusion_confidence_inference_count` are reported separately.
+   - `fusion_confidence_inference_count` strictly equals the number of inference rows in `fusion_decisions.csv` (95 == 95, 921 == 921).
 
 ---
 

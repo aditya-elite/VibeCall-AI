@@ -16,6 +16,8 @@ import android.widget.AutoCompleteTextView
 import android.widget.ArrayAdapter
 import android.widget.Button
 import android.widget.ImageView
+import android.widget.RadioButton
+import android.widget.RadioGroup
 import android.widget.TextView
 import android.widget.Toast
 import androidx.activity.result.contract.ActivityResultContracts
@@ -44,6 +46,10 @@ class MainActivity : AppCompatActivity() {
     private lateinit var timerText: TextView
     private lateinit var statusDot: View
     private lateinit var recordingStateText: TextView
+    private lateinit var recordingModeRadioGroup: RadioGroup
+    private lateinit var radioModeStable: RadioButton
+    private lateinit var radioModeFair: RadioButton
+    private lateinit var modeCharacterizationStatus: TextView
 
     private var latestZip: File? = null
     private var latestDenoisedWav: File? = null
@@ -100,6 +106,18 @@ class MainActivity : AppCompatActivity() {
         timerText = findViewById(R.id.timerText)
         statusDot = findViewById(R.id.statusDot)
         recordingStateText = findViewById(R.id.recordingStateText)
+        recordingModeRadioGroup = findViewById(R.id.recordingModeRadioGroup)
+        radioModeStable = findViewById(R.id.radioModeStable)
+        radioModeFair = findViewById(R.id.radioModeFair)
+        modeCharacterizationStatus = findViewById(R.id.modeCharacterizationStatus)
+
+        recordingModeRadioGroup.setOnCheckedChangeListener { _, checkedId ->
+            if (checkedId == R.id.radioModeFair) {
+                modeCharacterizationStatus.text = "Target Mode: Fair RNNoise A/B (UNPROCESSED/VOICE_RECOGNITION, effects disabled)"
+            } else {
+                modeCharacterizationStatus.text = "Target Mode: Platform Telephony (VOICE_COMMUNICATION, hardware processing active)"
+            }
+        }
 
         recorder = SessionRecorder(
             context = this,
@@ -243,12 +261,18 @@ class MainActivity : AppCompatActivity() {
         playbackHelperText.text = "Recording in progress… Speak normally and keep phone in place."
 
         val label = testAutoCompleteTextView.text.toString()
-        runCatching { recorder.start(label) }
+        val mode = if (radioModeFair.isChecked) {
+            RecordingMode.FAIR_COMPARISON
+        } else {
+            RecordingMode.STABLE_COMMUNICATION
+        }
+        runCatching { recorder.start(label, mode) }
             .onSuccess {
                 recordingStartedMs = SystemClock.elapsedRealtime()
                 timerText.text = "00:00.0"
                 rateText.text = "Accelerometer rate: measuring…"
                 statusText.text = "Recording: $label\nSpeak normally and keep the phone in the stated position."
+                modeCharacterizationStatus.text = "Active: ${recorder.currentMicrophoneCharacterization} (${recorder.currentAudioSource})"
 
                 statusDot.setBackgroundResource(R.drawable.recording_dot_active)
                 recordingStateText.text = getString(R.string.recording_status_active)
@@ -259,6 +283,8 @@ class MainActivity : AppCompatActivity() {
                 shareButton.isEnabled = false
                 testInputLayout.isEnabled = false
                 testAutoCompleteTextView.isEnabled = false
+                radioModeStable.isEnabled = false
+                radioModeFair.isEnabled = false
                 uiHandler.post(timerTask)
             }
             .onFailure { error ->
@@ -305,6 +331,9 @@ class MainActivity : AppCompatActivity() {
                 stopButton.isEnabled = false
                 testInputLayout.isEnabled = true
                 testAutoCompleteTextView.isEnabled = true
+                radioModeStable.isEnabled = true
+                radioModeFair.isEnabled = true
+                modeCharacterizationStatus.text = "Last Session: ${recorder.currentMicrophoneCharacterization} (${recorder.currentAudioSource})"
             }
         }
     }
@@ -374,9 +403,9 @@ class MainActivity : AppCompatActivity() {
                     playDenoisedButton.text = "Play RNNoise"
                     playRawButton.text = "⏹ Stop Raw"
                     playFusionButton.text = "Play Fusion (Exp.)"
-                    playbackStatusBadge.text = "PLAYING RAW MIC"
+                    playbackStatusBadge.text = "PLAYING RAW AUDIO"
                     playbackStatusBadge.setTextColor(ContextCompat.getColor(this, R.color.vibe_primary))
-                    playbackHelperText.text = "Playing raw microphone audio (original environment noise)."
+                    playbackHelperText.text = "Playing raw capture: ${recorder.currentMicrophoneCharacterization}."
                 }
                 AudioTrack.FUSION -> {
                     playDenoisedButton.text = "Play RNNoise"

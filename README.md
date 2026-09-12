@@ -83,6 +83,8 @@ The updated VibeCall app was deployed directly to the flagship **iQOO 15 (`vivo 
 | **Trial 15** | `Cheek - speaking with noise` | 20.28s | **400.00 Hz** | 159 | 0.844 (Gain) | **Live Step 4 Fusion verified: 12 hangover protections, 0 audio clips, 84 µs latency** |
 | **Trial 16** | `Cheek - speaking with noise` | 21.48s | **400.00 Hz** | 168 | 0.867 (Gain) | **Live Step 4 Fusion verified: 13 hangover protections, 17 pitch agreements** |
 | **Trial 17** | `Cheek - speaking with noise` | 17.84s | **400.00 Hz** | 140 | 0.905 (Gain) | **Live Step 4 Fusion verified: 12 hangover protections, smooth pause attenuation** |
+| **Trial 18** | `Cheek - speaking with noise` | 12.16s | **400.00 Hz** | 95 | 0.1894 | **Fair RNNoise validated: +18.71 dB attenuation, effects disabled, 95 CSV inferences** |
+| **Trial 19** | `Cheek - speaking with noise` | 117.82s | **400.00 Hz** | 921 | 0.1816 | **Stable Telephony default validated: 921 CSV inferences, platform effects active** |
 
 ### Audio–Vibration Pitch Agreement Verification Matrix
 

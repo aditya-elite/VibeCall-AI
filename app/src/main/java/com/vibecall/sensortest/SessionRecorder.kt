@@ -9,12 +9,17 @@ import android.media.AudioFormat
 import android.media.AudioManager
 import android.media.AudioRecord
 import android.media.MediaRecorder
+import android.media.audiofx.AudioEffect
+import android.media.audiofx.NoiseSuppressor
+import android.media.audiofx.AcousticEchoCanceler
+import android.media.audiofx.AutomaticGainControl
 import android.os.Build
 import android.os.Environment
 import android.os.Handler
 import android.os.HandlerThread
 import android.os.SystemClock
 import android.util.Log
+import org.json.JSONArray
 import org.json.JSONObject
 import java.io.BufferedWriter
 import java.io.File
@@ -116,6 +121,53 @@ data class FusionDecisionRow(
     }
 }
 
+enum class RecordingMode {
+    /**
+     * Standard stable communication mode utilizing platform telephony gain-staging
+     * and hardware processing (VOICE_COMMUNICATION). Output is labeled as "Platform-processed microphone".
+     */
+    STABLE_COMMUNICATION,
+
+    /**
+     * Fair A/B benchmarking mode designed to evaluate RNNoise on untreated audio.
+     * Tries UNPROCESSED -> VOICE_RECOGNITION -> MIC, and actively requests disabling
+     * hardware noise suppressors, acoustic echo cancelers, and automatic gain controls.
+     * Strictly avoids VOICE_COMMUNICATION.
+     */
+    FAIR_COMPARISON
+}
+
+data class AudioEffectStatus(
+    val name: String,
+    val available: Boolean,
+    val wasEnabled: Boolean,
+    val disabledSuccessfully: Boolean,
+    val currentEnabled: Boolean,
+    val error: String? = null
+)
+
+data class FusionRuntimeStats(
+    val backendStatus: String,
+    val inferenceCount: Long,
+    val failureCount: Long,
+    val avgLatencyUs: Double,
+    val maxLatencyUs: Long
+)
+
+data class RnnoiseRuntimeStats(
+    val initialized: Boolean,
+    val frameCount: Long,
+    val failureCount: Long,
+    val inputSampleCount: Long,
+    val outputSampleCount: Long,
+    val inputRms: Double,
+    val outputRms: Double,
+    val attenuationDb: Double,
+    val meanAbsoluteDiff: Double,
+    val differentSamplePercentage: Double,
+    val actualAudioSource: String
+)
+
 class SessionRecorder(
     private val context: Context,
     private val onRateUpdate: (Double, Long) -> Unit = { _, _ -> },
@@ -125,6 +177,20 @@ class SessionRecorder(
     companion object {
         const val AUDIO_SAMPLE_RATE = 16_000
         const val REQUESTED_SENSOR_PERIOD_US = 2_500 // Request 400 Hz; hardware decides actual rate.
+
+        fun getMicrophoneCharacterization(
+            audioSource: String,
+            effectStatuses: List<AudioEffectStatus>
+        ): String {
+            val anyEffectEnabled = effectStatuses.any { it.currentEnabled }
+            return when {
+                audioSource == "UNPROCESSED" && !anyEffectEnabled -> "Unprocessed acoustic microphone"
+                audioSource == "VOICE_COMMUNICATION" -> "Platform-processed microphone"
+                audioSource == "VOICE_RECOGNITION" -> "Platform source: VOICE_RECOGNITION"
+                audioSource == "MIC" -> "Platform source: MIC"
+                else -> "Platform source: $audioSource"
+            }
+        }
     }
 
     private val sensorManager = context.getSystemService(SensorManager::class.java)
@@ -208,8 +274,31 @@ class SessionRecorder(
     private var prevPhoneMotionLevel: Double? = null
     private var prevSensorReliability: Double? = null
 
+    // Recording mode and audio effects
+    private var currentRecordingMode: RecordingMode = RecordingMode.STABLE_COMMUNICATION
+    private val activeAudioEffects = mutableListOf<AudioEffect>()
+    private val audioEffectStatuses = mutableListOf<AudioEffectStatus>()
+
+    // RNNoise runtime statistics accumulators
+    private var rnnoiseInputSamplesCount: Long = 0L
+    private var rnnoiseOutputSamplesCount: Long = 0L
+    private var rnnoiseSumInputSquares: Double = 0.0
+    private var rnnoiseSumOutputSquares: Double = 0.0
+    private var rnnoiseSumAbsoluteDiff: Double = 0.0
+    private var rnnoiseDifferentSamplesCount: Long = 0L
+    private var rnnoiseComparedSamplesCount: Long = 0L
+
     val isRecording: Boolean
         get() = recording
+
+    val currentAudioSource: String
+        get() = audioSourceName
+
+    val currentMode: RecordingMode
+        get() = currentRecordingMode
+
+    val currentMicrophoneCharacterization: String
+        get() = getMicrophoneCharacterization(audioSourceName, audioEffectStatuses)
 
     val currentTrustValue: Float
         get() = latestTrustValue
@@ -254,10 +343,11 @@ class SessionRecorder(
     }
 
     @Synchronized
-    fun start(label: String) {
+    fun start(label: String, mode: RecordingMode = RecordingMode.STABLE_COMMUNICATION) {
         check(!recording) { "A session is already recording" }
 
         sessionLabel = label
+        currentRecordingMode = mode
         val directory = createSessionDirectory(label)
         sessionDirectory = directory
         pcmFile = File(directory, "microphone.pcm")
@@ -312,6 +402,15 @@ class SessionRecorder(
         trustInferenceCount = 0L
         sessionStartElapsedNs = SystemClock.elapsedRealtimeNanos()
 
+        // Reset RNNoise accumulators
+        rnnoiseInputSamplesCount = 0L
+        rnnoiseOutputSamplesCount = 0L
+        rnnoiseSumInputSquares = 0.0
+        rnnoiseSumOutputSquares = 0.0
+        rnnoiseSumAbsoluteDiff = 0.0
+        rnnoiseDifferentSamplesCount = 0L
+        rnnoiseComparedSamplesCount = 0L
+
         fusionGateModel = runCatching { FusionGateModel(context) }
             .onFailure { Log.w("SessionRecorder", "Failed to initialize FusionGateModel", it) }
             .getOrNull()
@@ -335,8 +434,9 @@ class SessionRecorder(
         latestAppliedGain = 1.0f
         latestControllerState = "PRESERVE"
 
-        val recorder = buildAudioRecord()
+        val recorder = buildAudioRecord(mode)
         audioRecord = recorder
+        inspectAndConfigureAudioEffects(recorder.audioSessionId, disableForFairComparison = (mode == RecordingMode.FAIR_COMPARISON))
         recording = true
 
         val registered = sensorManager.registerListener(
@@ -348,6 +448,8 @@ class SessionRecorder(
         )
         if (!registered) {
             recording = false
+            activeAudioEffects.forEach { runCatching { it.release() } }
+            activeAudioEffects.clear()
             recorder.release()
             sensorWriter?.close()
             featuresWriter?.close()
@@ -359,6 +461,8 @@ class SessionRecorder(
         if (recorder.recordingState != AudioRecord.RECORDSTATE_RECORDING) {
             recording = false
             sensorManager.unregisterListener(this)
+            activeAudioEffects.forEach { runCatching { it.release() } }
+            activeAudioEffects.clear()
             recorder.release()
             sensorWriter?.close()
             featuresWriter?.close()
@@ -441,12 +545,33 @@ class SessionRecorder(
                     fusionPcm.delete()
                 }
 
+                val fusionStats = fusionConfidenceModel?.let { model ->
+                    FusionRuntimeStats(
+                        backendStatus = latestBackendStatus,
+                        inferenceCount = model.getInferenceCount().toLong(),
+                        failureCount = model.getFailureCount().toLong(),
+                        avgLatencyUs = model.getAverageLatencyUs(),
+                        maxLatencyUs = model.getMaxLatencyUs()
+                    )
+                } ?: FusionRuntimeStats(
+                    backendStatus = latestBackendStatus,
+                    inferenceCount = 0L,
+                    failureCount = 0L,
+                    avgLatencyUs = 0.0,
+                    maxLatencyUs = 0L
+                )
+
+                val rnnoiseStats = computeRnnoiseRuntimeStats()
+
                 fusionGateModel?.close()
                 fusionGateModel = null
                 rnnoiseProcessor?.close()
                 rnnoiseProcessor = null
                 fusionConfidenceModel?.close()
                 fusionConfidenceModel = null
+
+                activeAudioEffects.forEach { runCatching { it.release() } }
+                activeAudioEffects.clear()
 
                 featuresWriter?.flush()
                 featuresWriter?.close()
@@ -459,7 +584,7 @@ class SessionRecorder(
                 val directory = sessionDirectory ?: error("Missing session directory")
                 val measuredRate = measuredSensorRateHz()
                 val avgTrust = if (trustInferenceCount > 0) totalTrustValue / trustInferenceCount else 1.0
-                writeMetadata(directory, measuredRate, avgTrust)
+                writeMetadata(directory, measuredRate, avgTrust, fusionStats, rnnoiseStats)
                 val zip = zipSession(directory)
 
                 SessionResult(
@@ -561,13 +686,234 @@ class SessionRecorder(
             rnnoiseProcessor = null
             fusionConfidenceModel?.close()
             fusionConfidenceModel = null
+            activeAudioEffects.forEach { runCatching { it.release() } }
+            activeAudioEffects.clear()
             sensorThread.quitSafely()
             audioExecutor.shutdown()
         }
     }
 
+    private fun computeRnnoiseRuntimeStats(): RnnoiseRuntimeStats {
+        val processor = rnnoiseProcessor
+        val initialized = (processor != null)
+        val frameCount = processor?.getFrameCount() ?: 0L
+        val failureCount = processor?.getFailureCount() ?: 0L
+        val inSamples = rnnoiseInputSamplesCount
+        val outSamples = rnnoiseOutputSamplesCount
+        val inRms = if (inSamples > 0) kotlin.math.sqrt(rnnoiseSumInputSquares / inSamples.toDouble()) else 0.0
+        val outRms = if (outSamples > 0) kotlin.math.sqrt(rnnoiseSumOutputSquares / outSamples.toDouble()) else 0.0
+        val attenuationDb = if (inRms > 1e-6 && outRms > 1e-6) {
+            20.0 * kotlin.math.log10(inRms / outRms)
+        } else {
+            0.0
+        }
+        val meanAbsDiff = if (rnnoiseComparedSamplesCount > 0) {
+            rnnoiseSumAbsoluteDiff / rnnoiseComparedSamplesCount.toDouble()
+        } else {
+            0.0
+        }
+        val diffPct = if (rnnoiseComparedSamplesCount > 0) {
+            (rnnoiseDifferentSamplesCount.toDouble() * 100.0) / rnnoiseComparedSamplesCount.toDouble()
+        } else {
+            0.0
+        }
 
-    private fun buildAudioRecord(): AudioRecord {
+        return RnnoiseRuntimeStats(
+            initialized = initialized,
+            frameCount = frameCount,
+            failureCount = failureCount,
+            inputSampleCount = inSamples,
+            outputSampleCount = outSamples,
+            inputRms = inRms,
+            outputRms = outRms,
+            attenuationDb = attenuationDb,
+            meanAbsoluteDiff = meanAbsDiff,
+            differentSamplePercentage = diffPct,
+            actualAudioSource = audioSourceName
+        )
+    }
+
+    private fun inspectAndConfigureAudioEffects(audioSessionId: Int, disableForFairComparison: Boolean) {
+        audioEffectStatuses.clear()
+        activeAudioEffects.forEach { runCatching { it.release() } }
+        activeAudioEffects.clear()
+
+        // 1. NoiseSuppressor
+        try {
+            val available = NoiseSuppressor.isAvailable()
+            if (available) {
+                val ns = NoiseSuppressor.create(audioSessionId)
+                if (ns != null) {
+                    val wasEnabled = ns.enabled
+                    var disabledSuccess = false
+                    if (disableForFairComparison && wasEnabled) {
+                        val res = ns.setEnabled(false)
+                        disabledSuccess = (res == AudioEffect.SUCCESS && !ns.enabled)
+                    }
+                    audioEffectStatuses.add(
+                        AudioEffectStatus(
+                            name = "NoiseSuppressor",
+                            available = true,
+                            wasEnabled = wasEnabled,
+                            disabledSuccessfully = disabledSuccess,
+                            currentEnabled = ns.enabled
+                        )
+                    )
+                    activeAudioEffects.add(ns)
+                } else {
+                    audioEffectStatuses.add(
+                        AudioEffectStatus(
+                            name = "NoiseSuppressor",
+                            available = true,
+                            wasEnabled = false,
+                            disabledSuccessfully = false,
+                            currentEnabled = false,
+                            error = "create() returned null"
+                        )
+                    )
+                }
+            } else {
+                audioEffectStatuses.add(
+                    AudioEffectStatus(
+                        name = "NoiseSuppressor",
+                        available = false,
+                        wasEnabled = false,
+                        disabledSuccessfully = false,
+                        currentEnabled = false
+                    )
+                )
+            }
+        } catch (e: Throwable) {
+            audioEffectStatuses.add(
+                AudioEffectStatus(
+                    name = "NoiseSuppressor",
+                    available = false,
+                    wasEnabled = false,
+                    disabledSuccessfully = false,
+                    currentEnabled = false,
+                    error = e.message ?: e.javaClass.simpleName
+                )
+            )
+        }
+
+        // 2. AcousticEchoCanceler
+        try {
+            val available = AcousticEchoCanceler.isAvailable()
+            if (available) {
+                val aec = AcousticEchoCanceler.create(audioSessionId)
+                if (aec != null) {
+                    val wasEnabled = aec.enabled
+                    var disabledSuccess = false
+                    if (disableForFairComparison && wasEnabled) {
+                        val res = aec.setEnabled(false)
+                        disabledSuccess = (res == AudioEffect.SUCCESS && !aec.enabled)
+                    }
+                    audioEffectStatuses.add(
+                        AudioEffectStatus(
+                            name = "AcousticEchoCanceler",
+                            available = true,
+                            wasEnabled = wasEnabled,
+                            disabledSuccessfully = disabledSuccess,
+                            currentEnabled = aec.enabled
+                        )
+                    )
+                    activeAudioEffects.add(aec)
+                } else {
+                    audioEffectStatuses.add(
+                        AudioEffectStatus(
+                            name = "AcousticEchoCanceler",
+                            available = true,
+                            wasEnabled = false,
+                            disabledSuccessfully = false,
+                            currentEnabled = false,
+                            error = "create() returned null"
+                        )
+                    )
+                }
+            } else {
+                audioEffectStatuses.add(
+                    AudioEffectStatus(
+                        name = "AcousticEchoCanceler",
+                        available = false,
+                        wasEnabled = false,
+                        disabledSuccessfully = false,
+                        currentEnabled = false
+                    )
+                )
+            }
+        } catch (e: Throwable) {
+            audioEffectStatuses.add(
+                AudioEffectStatus(
+                    name = "AcousticEchoCanceler",
+                    available = false,
+                    wasEnabled = false,
+                    disabledSuccessfully = false,
+                    currentEnabled = false,
+                    error = e.message ?: e.javaClass.simpleName
+                )
+            )
+        }
+
+        // 3. AutomaticGainControl
+        try {
+            val available = AutomaticGainControl.isAvailable()
+            if (available) {
+                val agc = AutomaticGainControl.create(audioSessionId)
+                if (agc != null) {
+                    val wasEnabled = agc.enabled
+                    var disabledSuccess = false
+                    if (disableForFairComparison && wasEnabled) {
+                        val res = agc.setEnabled(false)
+                        disabledSuccess = (res == AudioEffect.SUCCESS && !agc.enabled)
+                    }
+                    audioEffectStatuses.add(
+                        AudioEffectStatus(
+                            name = "AutomaticGainControl",
+                            available = true,
+                            wasEnabled = wasEnabled,
+                            disabledSuccessfully = disabledSuccess,
+                            currentEnabled = agc.enabled
+                        )
+                    )
+                    activeAudioEffects.add(agc)
+                } else {
+                    audioEffectStatuses.add(
+                        AudioEffectStatus(
+                            name = "AutomaticGainControl",
+                            available = true,
+                            wasEnabled = false,
+                            disabledSuccessfully = false,
+                            currentEnabled = false,
+                            error = "create() returned null"
+                        )
+                    )
+                }
+            } else {
+                audioEffectStatuses.add(
+                    AudioEffectStatus(
+                        name = "AutomaticGainControl",
+                        available = false,
+                        wasEnabled = false,
+                        disabledSuccessfully = false,
+                        currentEnabled = false
+                    )
+                )
+            }
+        } catch (e: Throwable) {
+            audioEffectStatuses.add(
+                AudioEffectStatus(
+                    name = "AutomaticGainControl",
+                    available = false,
+                    wasEnabled = false,
+                    disabledSuccessfully = false,
+                    currentEnabled = false,
+                    error = e.message ?: e.javaClass.simpleName
+                )
+            )
+        }
+    }
+
+    private fun buildAudioRecord(mode: RecordingMode): AudioRecord {
         val format = AudioFormat.Builder()
             .setEncoding(AudioFormat.ENCODING_PCM_16BIT)
             .setSampleRate(AUDIO_SAMPLE_RATE)
@@ -582,10 +928,17 @@ class SessionRecorder(
         check(minimum > 0) { "This device rejected the selected microphone format" }
         val bufferSize = max(minimum * 2, 8_192)
 
-        val candidateSources = listOf(
-            "VOICE_COMMUNICATION" to MediaRecorder.AudioSource.VOICE_COMMUNICATION,
-            "MIC" to MediaRecorder.AudioSource.MIC
-        )
+        val candidateSources = when (mode) {
+            RecordingMode.FAIR_COMPARISON -> listOf(
+                "UNPROCESSED" to MediaRecorder.AudioSource.UNPROCESSED,
+                "VOICE_RECOGNITION" to MediaRecorder.AudioSource.VOICE_RECOGNITION,
+                "MIC" to MediaRecorder.AudioSource.MIC
+            )
+            RecordingMode.STABLE_COMMUNICATION -> listOf(
+                "VOICE_COMMUNICATION" to MediaRecorder.AudioSource.VOICE_COMMUNICATION,
+                "MIC" to MediaRecorder.AudioSource.MIC
+            )
+        }
 
         for ((name, source) in candidateSources) {
             try {
@@ -596,16 +949,20 @@ class SessionRecorder(
                     .build()
                 if (candidate.state == AudioRecord.STATE_INITIALIZED) {
                     audioSourceName = name
-                    Log.i("SessionRecorder", "Microphone initialized using $name")
+                    Log.i("SessionRecorder", "Microphone initialized using $name (Mode: $mode)")
                     return candidate
                 }
                 candidate.release()
             } catch (e: Exception) {
-                Log.w("SessionRecorder", "Failed initializing audio source $name: ${e.message}")
+                Log.w("SessionRecorder", "Failed initializing audio source $name in mode $mode: ${e.message}")
             }
         }
 
-        throw IllegalStateException("Android could not initialise the microphone with VOICE_COMMUNICATION or MIC")
+        if (mode == RecordingMode.FAIR_COMPARISON) {
+            throw IllegalStateException("Could not initialize microphone using UNPROCESSED, VOICE_RECOGNITION, or MIC in Fair Comparison mode")
+        } else {
+            throw IllegalStateException("Android could not initialize the microphone with VOICE_COMMUNICATION or MIC")
+        }
     }
 
     private fun recordAudioLoop(recorder: AudioRecord, outputFile: File, gatedFile: File?, fusionFile: File?) {
@@ -709,6 +1066,30 @@ class SessionRecorder(
                                             rnnoiseBytes[i * 2 + 1] = ((s shr 8) and 0xFF).toByte()
                                         }
                                         rnnoiseStream.write(rnnoiseBytes)
+
+                                        // Update RNNoise runtime diagnostics
+                                        rnnoiseInputSamplesCount += numSamples
+                                        rnnoiseOutputSamplesCount += cleaned.size
+                                        val minLen = minOf(numSamples, cleaned.size)
+                                        for (i in 0 until minLen) {
+                                            val x = shortSamples[i].toDouble()
+                                            val y = cleaned[i].toDouble()
+                                            rnnoiseSumInputSquares += x * x
+                                            rnnoiseSumOutputSquares += y * y
+                                            rnnoiseSumAbsoluteDiff += kotlin.math.abs(x - y)
+                                            if (shortSamples[i] != cleaned[i]) {
+                                                rnnoiseDifferentSamplesCount++
+                                            }
+                                            rnnoiseComparedSamplesCount++
+                                        }
+                                        for (i in minLen until numSamples) {
+                                            val x = shortSamples[i].toDouble()
+                                            rnnoiseSumInputSquares += x * x
+                                        }
+                                        for (i in minLen until cleaned.size) {
+                                            val y = cleaned[i].toDouble()
+                                            rnnoiseSumOutputSquares += y * y
+                                        }
                                     }
                                     cleaned
                                 } else {
@@ -834,7 +1215,11 @@ class SessionRecorder(
                                 val f = (s * currentGain).toInt().coerceIn(-32768, 32767)
                                 fusionBytes[i * 2] = (f and 0xFF).toByte()
                                 fusionBytes[i * 2 + 1] = ((f shr 8) and 0xFF).toByte()
+
+                                val y = flushed16k[i].toDouble()
+                                rnnoiseSumOutputSquares += y * y
                             }
+                            rnnoiseOutputSamplesCount += flushed16k.size
                             rnnoiseStream.write(rnnoiseBytes)
                             fusionStream?.write(fusionBytes)
                         }
@@ -879,7 +1264,13 @@ class SessionRecorder(
         }
     }
 
-    private fun writeMetadata(directory: File, measuredRate: Double, averageTrust: Double) {
+    private fun writeMetadata(
+        directory: File,
+        measuredRate: Double,
+        averageTrust: Double,
+        fusionStats: FusionRuntimeStats,
+        rnnoiseStats: RnnoiseRuntimeStats
+    ) {
         val utcFormatter = SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss.SSS'Z'", Locale.US).apply {
             timeZone = TimeZone.getTimeZone("UTC")
         }
@@ -887,14 +1278,48 @@ class SessionRecorder(
             put("format_version", 1)
             put("created_utc", utcFormatter.format(Date()))
             put("test_label", sessionLabel)
+            put("recording_mode", currentRecordingMode.name)
+            put("microphone_characterization", currentMicrophoneCharacterization)
             put("npu_fusion_enabled", true)
             put("npu_model_name", "fusion_gate_model.tflite")
             put("npu_delegate", "NNAPI delegate initialized — physical NPU not independently verified")
-            put("fusion_inference_count", trustInferenceCount)
+            put("legacy_trust_inference_count", trustInferenceCount)
             put("average_trust_value", averageTrust)
             put("gated_audio_file", if (gatedWavFile?.exists() == true) "gated_microphone.wav" else JSONObject.NULL)
+
+            // Audio effects
+            val effectsArray = JSONArray().apply {
+                audioEffectStatuses.forEach { effect ->
+                    put(JSONObject().apply {
+                        put("name", effect.name)
+                        put("available", effect.available)
+                        put("was_enabled", effect.wasEnabled)
+                        put("disabled_successfully", effect.disabledSuccessfully)
+                        put("current_enabled", effect.currentEnabled)
+                        put("error", effect.error ?: JSONObject.NULL)
+                    })
+                }
+            }
+            put("audio_effects", effectsArray)
+
+            // RNNoise diagnostics
             put("rnnoise_enabled", rnnoiseWavFile?.exists() == true)
             put("rnnoise_audio_file", if (rnnoiseWavFile?.exists() == true) "microphone_rnnoise.wav" else JSONObject.NULL)
+            val rnnoiseDiag = JSONObject().apply {
+                put("initialized", rnnoiseStats.initialized)
+                put("frame_count", rnnoiseStats.frameCount)
+                put("failure_count", rnnoiseStats.failureCount)
+                put("input_sample_count", rnnoiseStats.inputSampleCount)
+                put("output_sample_count", rnnoiseStats.outputSampleCount)
+                put("input_rms", rnnoiseStats.inputRms)
+                put("output_rms", rnnoiseStats.outputRms)
+                put("attenuation_db", rnnoiseStats.attenuationDb)
+                put("mean_absolute_diff", rnnoiseStats.meanAbsoluteDiff)
+                put("different_sample_percentage", rnnoiseStats.differentSamplePercentage)
+                put("actual_audio_source", rnnoiseStats.actualAudioSource)
+            }
+            put("rnnoise_diagnostics", rnnoiseDiag)
+
             put("features_file", if (featuresFile?.exists() == true) "features.csv" else JSONObject.NULL)
             put("feature_rolling_window_ms", 100)
             put("feature_spectral_window_ms", 250)
@@ -908,11 +1333,12 @@ class SessionRecorder(
             put("fusion_model_name", "fusion_confidence_model.tflite")
             put("fusion_model_metadata_file", "fusion_model_metadata.json")
             put("fusion_model_input_dimension", 16)
-            put("fusion_backend_status", latestBackendStatus)
-            put("fusion_inference_count", fusionConfidenceModel?.getInferenceCount() ?: 0)
-            put("fusion_failure_count", fusionConfidenceModel?.getFailureCount() ?: 0)
-            put("fusion_avg_latency_us", fusionConfidenceModel?.getAverageLatencyUs() ?: 0.0)
-            put("fusion_max_latency_us", fusionConfidenceModel?.getMaxLatencyUs() ?: 0L)
+            put("fusion_backend_status", fusionStats.backendStatus)
+            put("fusion_inference_count", fusionStats.inferenceCount)
+            put("fusion_confidence_inference_count", fusionStats.inferenceCount)
+            put("fusion_failure_count", fusionStats.failureCount)
+            put("fusion_avg_latency_us", fusionStats.avgLatencyUs)
+            put("fusion_max_latency_us", fusionStats.maxLatencyUs)
             put("fusion_controller_min_gain", safeGainController.minimumGain)
             put("fusion_controller_pause_energy_threshold_db", safeGainController.pauseEnergyThresholdDb)
             put("fusion_controller_min_pause_windows", safeGainController.minConsecutivePauseWindows)
