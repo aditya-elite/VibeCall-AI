@@ -288,27 +288,64 @@ Step 3 implements single-pass continuous digital filtering, a 100 ms rolling buf
      - $5\text{ Hz}$ drift ($< 0.02$) and $195\text{ Hz}$ near Nyquist ($< 0.20$) attenuated.
    - **Low-Frequency Motion & Gravity Path**: 2nd-order Butterworth low-pass filter ($f_c = 5.0\text{ Hz}$) extracts slow hand movement and the static 1G gravity vector.
 2. **Rolling Accelerometer Buffer (`RollingAccelBuffer.kt`)**:
-   - Thread-safe sliding window retaining the last $100\text{ ms}$ of timestamped filtered samples ($\approx 40$ samples at $400\text{ Hz}$).
-   - Samples older than $100\text{ ms}$ are automatically evicted.
-3. **Audio-Relative Synchronization**:
-   - Each row in `features.csv` is aligned with the exact audio sample position:
-     $$\text{audio\_rel\_time\_ms} = \frac{\text{sample\_index} \times 1000}{\text{AUDIO\_SAMPLE\_RATE}}$$
+   - Thread-safe sliding window retaining **at least 300 ms** (configured for $350\text{ ms} = 350,000,000\text{ ns}$, capacity 512 samples at $400\text{ Hz}$).
+   - Extracts derived **100 ms snapshots** for RMS/motion features and **250 ms snapshots** for spectral peak analysis.
+   - Strictly excludes future samples: snapshots query samples with $t \le T_{\text{target\_audio\_ns}}$.
+3. **Microphone Pitch Estimation (`PitchEstimator.kt`)**:
+   - Normalized autocorrelation function (NACF) over the 80–190 Hz speech fundamental range on 16 kHz audio windows.
+   - Energy floor gate ($RMS \ge 0.002$) prevents false pitch estimation during silence.
+   - 3-point parabolic peak interpolation refines fractional lag; outputs pitch frequency, strength, and reliability flag ($NACF \ge 0.50$).
+4. **Accelerometer Spectral Peak Analysis (`AccelSpectralAnalyzer.kt`)**:
+   - Analyzes a 250 ms rolling window (~100 samples at 400 Hz) using a 256-point Hann-windowed radix-2 FFT over 80–185 Hz.
+   - **Rayleigh Resolution Limit**: A 250 ms window has a fundamental physical resolution limit of $\Delta f = 1 / 0.25\text{s} = 4.0\text{ Hz}$. Parabolic interpolation refines the peak location estimate between bins, but cannot physically resolve two distinct spectral lines spaced closer than 4 Hz.
+   - Multi-axis peak search identifies the best axis (`accel_best_axis`), measures peak power and prominence ($\ge 2.5\times$ out-of-peak mean), and strictly rejects motion noise, warmup transients, and alignment lag.
+5. **Audio–Accelerometer Synchronization & Alignment Lag**:
+   - Each feature row is aligned with exact audio sample bounds: `audio_window_start_ms`, `audio_window_center_ms`, and `audio_window_end_ms`.
+   - `sensor_alignment_lag_ms` measures the latency between the target audio end timestamp and the newest available sensor sample.
+   - Alignment lag $> 15.0\text{ ms}$ penalizes both `sensor_reliability` and `accel_peak_reliable`.
+6. **Audio–Vibration Agreement**:
+   - Calculates $\Delta f = |\text{pitch}_{\text{mic}} - \text{peak}_{\text{accel}}|$ and a Gaussian agreement score ($\sigma = 8.0\text{ Hz}$).
+   - `pitch_agreement_reliable` is asserted only when both microphone pitch and accelerometer peak are reliable and $\Delta f \le 10.0\text{ Hz}$; otherwise score is $0.0$.
 
 ### Feature Definitions (`features.csv`)
-Exported in every session `.zip` with the following columns:
+Exported in every session `.zip` with the following 34 columns:
 
 | Column | Unit | Description |
 | :--- | :--- | :--- |
-| `audio_relative_time_ms` | ms | Timestamp relative to the start of audio recording. |
+| `audio_relative_time_ms` | ms | Timestamp relative to audio recording start (equals `audio_window_start_ms`). |
+| `audio_window_start_ms` | ms | Start time of the audio analysis window. |
+| `audio_window_center_ms` | ms | Center time of the audio analysis window. |
+| `audio_window_end_ms` | ms | End time of the audio analysis window. |
+| `sensor_alignment_lag_ms` | ms | Latency between target audio timestamp and latest sensor sample in window ($>15\text{ ms}$ triggers reliability penalty). |
 | `microphone_rms` | normalized [0, 1] | Root-mean-square amplitude of microphone samples in the window. |
 | `microphone_log_energy_db` | dB | Logarithmic audio energy: $20 \log_{10}(\text{RMS} + 10^{-6})$. |
+| `microphone_pitch_hz` | Hz | Fundamental pitch estimated via normalized autocorrelation (80–190 Hz; 0.0 if unvoiced/unreliable). |
+| `microphone_pitch_strength` | [0.0, 1.0] | Normalized autocorrelation peak magnitude. |
+| `microphone_pitch_reliable` | boolean (0/1) | 1 if pitch strength $\ge 0.50$, RMS $\ge 0.002$, and within 80–190 Hz; 0 otherwise. |
 | `accelerometer_band_energy` | $\text{m}^2/\text{s}^4$ | Mean squared magnitude of $80\text{--}185\text{ Hz}$ bandpass vibration: $\frac{1}{M}\sum (x_{\text{bp}}^2 + y_{\text{bp}}^2 + z_{\text{bp}}^2)$. |
 | `accelerometer_band_rms` | $\text{m/s}^2$ | $\sqrt{\text{accelerometer\_band\_energy}}$. |
 | `phone_motion_level` | $\text{m/s}^2$ | Standard deviation of low-pass filtered acceleration magnitude $\sigma(\|a_{\text{low}}\|)$ over 100 ms. Measures gross hand/phone movement. |
-| `sensor_sample_count` | integer | Number of accelerometer samples $M$ in the 100 ms rolling buffer (nominal $\approx 40$). |
+| `sensor_sample_count` | integer | Number of accelerometer samples in the 100 ms rolling buffer (nominal $\approx 40$). |
 | `sensor_rate_hz` | Hz | Measured instantaneous accelerometer rate: $(M - 1) / \Delta t_{\text{window}}$. |
-| `sensor_reliability` | [0.0, 1.0] | Quality score reflecting sensor health: penalized during filter warmup (< 40 samples), sample starvation ($M < 25$), excessive timing gaps ($> 6\text{ ms}$), rate deviation ($> \pm 15\%$), and excessive phone shaking ($> 1.0\text{ m/s}^2$). |
+| `sensor_reliability` | [0.0, 1.0] | Quality score reflecting sensor health: penalized during warmup (< 40 samples), shortages ($M < 25$), gaps ($> 6\text{ ms}$), rate deviation ($> \pm 15\%$), shaking ($> 1.0\text{ m/s}^2$), and alignment lag ($> 15.0\text{ ms}$). |
 | `contact_quality` | [0.0, 1.0] | **Preliminary experimental heuristic**: Product of reliability, normalized band RMS, and motion quietness. *Explicitly uncalibrated; does NOT drive audio or claim proven contact.* |
+| `accel_x_band_rms` | $\text{m/s}^2$ | RMS of 80–185 Hz bandpass vibration on X-axis over 250 ms. |
+| `accel_y_band_rms` | $\text{m/s}^2$ | RMS of 80–185 Hz bandpass vibration on Y-axis over 250 ms. |
+| `accel_z_band_rms` | $\text{m/s}^2$ | RMS of 80–185 Hz bandpass vibration on Z-axis over 250 ms. |
+| `accel_x_peak_hz` | Hz | Interpolated spectral peak frequency on X-axis in 80–185 Hz band (0.0 if unreliable). |
+| `accel_y_peak_hz` | Hz | Interpolated spectral peak frequency on Y-axis in 80–185 Hz band (0.0 if unreliable). |
+| `accel_z_peak_hz` | Hz | Interpolated spectral peak frequency on Z-axis in 80–185 Hz band (0.0 if unreliable). |
+| `accel_x_peak_power` | power | Normalized spectral power of X-axis peak. |
+| `accel_y_peak_power` | power | Normalized spectral power of Y-axis peak. |
+| `accel_z_peak_power` | power | Normalized spectral power of Z-axis peak. |
+| `accel_best_axis` | string | Best axis exhibiting highest vibration spectral peak power ("X", "Y", or "Z"). |
+| `accel_peak_hz` | Hz | Interpolated spectral peak frequency on best axis (0.0 if unreliable). |
+| `accel_peak_power` | power | Normalized spectral power of best axis peak. |
+| `accel_peak_prominence` | ratio | Ratio of peak power to mean out-of-peak band power on best axis. |
+| `accel_peak_reliable` | boolean (0/1) | 1 if warmed up, samples $\ge 60$, prominence $\ge 2.5$, motion $\le 0.50\text{ m/s}^2$, lag $\le 15\text{ ms}$, reliability $\ge 0.70$; 0 otherwise. |
+| `pitch_difference_hz` | Hz | Absolute difference $|\text{microphone\_pitch\_hz} - \text{accel\_peak\_hz}|$. |
+| `pitch_agreement_score` | [0.0, 1.0] | Gaussian agreement score $\exp(-\Delta f^2 / (2 \cdot 8^2))$ when both signals are reliable; 0.0 otherwise. |
+| `pitch_agreement_reliable` | boolean (0/1) | 1 if both mic pitch and accel peak are reliable AND $\Delta f \le 10.0\text{ Hz}$; 0 otherwise. |
 
 ### Filter Startup Transient Exclusion
 Upon session start, all filter internal delay states are reset. The first 40 accelerometer samples ($\approx 100\text{ ms}$) are marked as filter warmup (`isWarmedUp == false`), heavily penalizing `sensor_reliability` ($\le 0.10$) to prevent startup step transients from corrupting initial feature rows.
@@ -340,4 +377,7 @@ The calibration protocol above was executed on the iQOO 15 (`20260912_145725_604
 - **Phase 4: Phone Repositioning / Lift (> 15.0s, N=6)**:
   - Hand motion level: Spikes to 0.297649 m/s² due to gross device movement, while band energy remains distinct from speech phonation.
 
-**Conclusion for Step 4 Retraining**: The 80–185 Hz bandpass energy successfully discriminates vocal resonance from low-frequency hand movement jitter, avoiding the saturation failure mode of raw XYZ instantaneous readings.
+### Honest Scientific Evaluation & Next Steps (Trial 8 Findings)
+1. **Total Band RMS Fails to Separate Vowels from Silence**: Trial 8 demonstrated that total 80–185 Hz vibration band RMS does not reliably separate vowel speech from silence. Mean band RMS during silence baseline ($\approx 0.00903\text{ m/s}^2$), sustained "aaaa" ($\approx 0.00870\text{ m/s}^2$), and sustained "mmmm" ($\approx 0.01000\text{ m/s}^2$) overlap heavily.
+2. **Frequency Match is Promising but Preliminary**: The agreement observed during "mmmm" (mic $\approx 136.7\text{ Hz}$, accel Z $\approx 134.4\text{ Hz}$) suggests that harmonic frequency matching is significantly more specific than wideband RMS energy, but a single session does not validate it.
+3. **No Fusion Retraining or Gain Adjustments Yet**: Fusion model retraining and fusion gain changes remain deferred until repeated multi-trial calibrations validate reproducible audio–vibration pitch agreement across diverse phoneme classes.

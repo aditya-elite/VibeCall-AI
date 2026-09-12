@@ -53,7 +53,15 @@ data class TelemetryData(
     val vibrationRms: Double = 0.0,
     val motionLevel: Double = 0.0,
     val sensorReliability: Double = 1.0,
-    val rollingSampleCount: Int = 0
+    val rollingSampleCount: Int = 0,
+    val microphonePitchHz: Double = 0.0,
+    val microphonePitchReliable: Boolean = false,
+    val accelPeakHz: Double = 0.0,
+    val accelBestAxis: String = "Z",
+    val accelPeakReliable: Boolean = false,
+    val pitchDifferenceHz: Double = 0.0,
+    val pitchAgreementScore: Double = 0.0,
+    val pitchAgreementReliable: Boolean = false
 )
 
 class SessionRecorder(
@@ -117,7 +125,7 @@ class SessionRecorder(
 
     // Step 3: Rolling Accelerometer Buffer & Feature Extraction
     private val filterBank = AccelFilterBank(400.0)
-    private val rollingAccelBuffer = RollingAccelBuffer(100_000_000L) // 100 ms
+    private val rollingAccelBuffer = RollingAccelBuffer(RollingAccelBuffer.DEFAULT_WINDOW_DURATION_NS) // 350 ms (retains >= 300 ms)
     private val featureExtractor = FeatureExtractor()
     private var featuresFile: File? = null
     private var featuresWriter: BufferedWriter? = null
@@ -383,7 +391,15 @@ class SessionRecorder(
                     vibrationRms = feat?.accelerometerBandRms ?: 0.0,
                     motionLevel = feat?.phoneMotionLevel ?: 0.0,
                     sensorReliability = feat?.sensorReliability ?: 1.0,
-                    rollingSampleCount = rollingAccelBuffer.size()
+                    rollingSampleCount = rollingAccelBuffer.size(),
+                    microphonePitchHz = feat?.microphonePitchHz ?: 0.0,
+                    microphonePitchReliable = (feat?.microphonePitchReliable == 1),
+                    accelPeakHz = feat?.accelPeakHz ?: 0.0,
+                    accelBestAxis = feat?.accelBestAxis ?: "Z",
+                    accelPeakReliable = (feat?.accelPeakReliable == 1),
+                    pitchDifferenceHz = feat?.pitchDifferenceHz ?: 0.0,
+                    pitchAgreementScore = feat?.pitchAgreementScore ?: 0.0,
+                    pitchAgreementReliable = (feat?.pitchAgreementReliable == 1)
                 )
             )
         }
@@ -477,14 +493,27 @@ class SessionRecorder(
                                 val mean = sum / numSamples
                                 val variance = max(0.0, (sumSq / numSamples) - (mean * mean)).toFloat()
 
-                                // 3. Audio-relative feature extraction for features.csv
-                                val audioRelTimeMs = (currentAudioSampleIndex.toDouble() * 1000.0) / AUDIO_SAMPLE_RATE.toDouble()
-                                val accelSnapshot = rollingAccelBuffer.getSnapshot()
+                                // 3. Audio-relative window timing and aligned accelerometer snapshots
+                                val startSampleIndex = currentAudioSampleIndex
+                                val endSampleIndex = startSampleIndex + numSamples
+                                val startMs = (startSampleIndex.toDouble() * 1000.0) / AUDIO_SAMPLE_RATE.toDouble()
+                                val endMs = (endSampleIndex.toDouble() * 1000.0) / AUDIO_SAMPLE_RATE.toDouble()
+                                val centerMs = (startMs + endMs) / 2.0
+
+                                val targetAudioTimestampNs = audioStartElapsedNs + ((endSampleIndex * 1_000_000_000L) / AUDIO_SAMPLE_RATE.toLong())
+
+                                val accel100ms = rollingAccelBuffer.getSnapshot100msEndingAt(targetAudioTimestampNs)
+                                val accel250ms = rollingAccelBuffer.getSnapshot250msEndingAt(targetAudioTimestampNs)
+
                                 val windowFeatures = featureExtractor.extractFeatures(
                                     audioSamples = shortSamples,
                                     numAudioSamples = numSamples,
-                                    audioRelativeTimeMs = audioRelTimeMs,
-                                    accelWindow = accelSnapshot,
+                                    audioWindowStartMs = startMs,
+                                    audioWindowCenterMs = centerMs,
+                                    audioWindowEndMs = endMs,
+                                    targetAudioTimestampNs = targetAudioTimestampNs,
+                                    accelWindow100ms = accel100ms,
+                                    accelWindow250ms = accel250ms,
                                     isFilterWarmedUp = filterBank.isWarmedUp
                                 )
                                 latestWindowFeatures = windowFeatures
@@ -612,7 +641,11 @@ class SessionRecorder(
             put("rnnoise_audio_file", if (rnnoiseWavFile?.exists() == true) "microphone_rnnoise.wav" else JSONObject.NULL)
             put("features_file", if (featuresFile?.exists() == true) "features.csv" else JSONObject.NULL)
             put("feature_rolling_window_ms", 100)
+            put("feature_spectral_window_ms", 250)
+            put("feature_buffer_retention_ms", 350)
             put("feature_bandpass_hz", "80-185")
+            put("feature_pitch_search_hz", "80-190")
+            put("audio_accelerometer_alignment", "Audio sample bounds mapped from audioStartElapsedNs (elapsedRealtimeNanos). Sensor snapshots query samples <= audio end timestamp, excluding future samples. Uncertainty bounded by DMA delivery buffer latency (~5-15ms).")
             put("manufacturer", Build.MANUFACTURER)
             put("model", Build.MODEL)
             put("android_release", Build.VERSION.RELEASE)

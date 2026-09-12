@@ -112,14 +112,29 @@ class MainActivity : AppCompatActivity() {
             },
             onTelemetryUpdate = { telemetry ->
                 runOnUiThread {
+                    val micStr = if (telemetry.microphonePitchReliable) {
+                        String.format(Locale.US, "Mic: %.0fHz", telemetry.microphonePitchHz)
+                    } else {
+                        "Mic: --"
+                    }
+                    val vibStr = if (telemetry.accelPeakReliable) {
+                        String.format(Locale.US, "Vib(%s): %.0fHz", telemetry.accelBestAxis, telemetry.accelPeakHz)
+                    } else {
+                        String.format(Locale.US, "Vib: %.2f", telemetry.vibrationRms)
+                    }
+                    val agreeStr = if (telemetry.pitchAgreementReliable) {
+                        String.format(Locale.US, "Δ: %.1fHz (%.2f)", telemetry.pitchDifferenceHz, telemetry.pitchAgreementScore)
+                    } else {
+                        "Agree: --"
+                    }
                     rateText.text = String.format(
                         Locale.US,
-                        "%.1f Hz | Vib: %.2f m/s² | Motion: %.2f m/s² | Rel: %d%% (N=%d)",
+                        "%.1f Hz | %s | %s | %s | Rel: %d%%",
                         telemetry.measuredRateHz,
-                        telemetry.vibrationRms,
-                        telemetry.motionLevel,
-                        (telemetry.sensorReliability * 100).toInt(),
-                        telemetry.rollingSampleCount
+                        micStr,
+                        vibStr,
+                        agreeStr,
+                        (telemetry.sensorReliability * 100).toInt()
                     )
                 }
             }
