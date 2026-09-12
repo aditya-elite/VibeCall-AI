@@ -332,19 +332,6 @@ class SessionRecorder(
 
 
     private fun buildAudioRecord(): AudioRecord {
-        val audioManager = context.getSystemService(AudioManager::class.java)
-        val unprocessedSupported = audioManager
-            .getProperty(AudioManager.PROPERTY_SUPPORT_AUDIO_SOURCE_UNPROCESSED)
-            ?.equals("true", ignoreCase = true) == true
-
-        val source = if (unprocessedSupported) {
-            audioSourceName = "UNPROCESSED"
-            MediaRecorder.AudioSource.UNPROCESSED
-        } else {
-            audioSourceName = "VOICE_RECOGNITION"
-            MediaRecorder.AudioSource.VOICE_RECOGNITION
-        }
-
         val format = AudioFormat.Builder()
             .setEncoding(AudioFormat.ENCODING_PCM_16BIT)
             .setSampleRate(AUDIO_SAMPLE_RATE)
@@ -357,17 +344,32 @@ class SessionRecorder(
             AudioFormat.ENCODING_PCM_16BIT
         )
         check(minimum > 0) { "This device rejected the selected microphone format" }
+        val bufferSize = max(minimum * 2, 8_192)
 
-        return AudioRecord.Builder()
-            .setAudioSource(source)
-            .setAudioFormat(format)
-            .setBufferSizeInBytes(max(minimum * 2, 8_192))
-            .build()
-            .also {
-                check(it.state == AudioRecord.STATE_INITIALIZED) {
-                    "Android could not initialise the microphone"
+        val candidateSources = listOf(
+            "VOICE_COMMUNICATION" to MediaRecorder.AudioSource.VOICE_COMMUNICATION,
+            "MIC" to MediaRecorder.AudioSource.MIC
+        )
+
+        for ((name, source) in candidateSources) {
+            try {
+                val candidate = AudioRecord.Builder()
+                    .setAudioSource(source)
+                    .setAudioFormat(format)
+                    .setBufferSizeInBytes(bufferSize)
+                    .build()
+                if (candidate.state == AudioRecord.STATE_INITIALIZED) {
+                    audioSourceName = name
+                    Log.i("SessionRecorder", "Microphone initialized using $name")
+                    return candidate
                 }
+                candidate.release()
+            } catch (e: Exception) {
+                Log.w("SessionRecorder", "Failed initializing audio source $name: ${e.message}")
             }
+        }
+
+        throw IllegalStateException("Android could not initialise the microphone with VOICE_COMMUNICATION or MIC")
     }
 
     private fun recordAudioLoop(recorder: AudioRecord, outputFile: File, gatedFile: File?) {
