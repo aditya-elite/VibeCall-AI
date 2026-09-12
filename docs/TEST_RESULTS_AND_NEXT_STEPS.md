@@ -91,6 +91,30 @@ Trial 8 (`20260912_153252_897_cheek_speaking_with_background_noise`, extracted v
 
 - **Acoustic Speech Preservation**: Raw Peak = `0.2777`, RNNoise Denoised Peak = `0.2625` (**94.5% peak retained** with noise suppressed).
 
+#### Five-Section Calibration Protocol Analysis (Trial 8):
+Trial 8 executed the standardized 5-phase sequence (`silent` – `aaaa` – `silent` – `mmmm` – `silent`):
+1. **Section 1: Silent Baseline 1 (1.0s – 3.5s, $N=20$)**:
+   - Microphone Log Energy: Mean $-119.48\text{ dB}$ (digital silence floor).
+   - Accelerometer Band RMS (80–185 Hz): Mean $0.010001\text{ m/s}^2$ (baseline tissue contact floor).
+   - Motion Level ($5\text{ Hz}$ Lowpass $\sigma$): Mean $0.025284\text{ m/s}^2$ (stable cheek contact).
+2. **Section 2: Phonation 1 — "aaaa" (4.0s – 7.5s, $N=27$)**:
+   - Microphone Log Energy: Mean $-34.04\text{ dB}$, peaking at $-21.06\text{ dB}$.
+   - Accelerometer Band RMS: Mean $0.008675\text{ m/s}^2$, max $0.011266\text{ m/s}^2$.
+   - Motion Level: Mean $0.015504\text{ m/s}^2$ (extremely steady hold during open vowel).
+3. **Section 3: Inter-Phonation Silent Pause 2 (8.0s – 10.5s, $N=20$)**:
+   - Microphone Log Energy: Constant $-120.00\text{ dB}$ (complete acoustic pause).
+   - Accelerometer Band RMS: Mean $0.009616\text{ m/s}^2$.
+   - Motion Level: Mean $0.014032\text{ m/s}^2$.
+4. **Section 4: Phonation 2 — "mmmm" (10.8s – 13.8s, $N=23$)**:
+   - Microphone Log Energy: Mean $-40.63\text{ dB}$, peaking at $-30.13\text{ dB}$.
+   - Accelerometer Band RMS: Mean $0.009676\text{ m/s}^2$, peaking at $0.017146\text{ m/s}^2$ (nasal vocal tract resonance coupling).
+   - Motion Level: Mean $0.014135\text{ m/s}^2$.
+5. **Section 5: Post-Phonation Silent Baseline 3 (14.0s – 15.2s, $N=9$)**:
+   - Microphone Log Energy: Mean $-116.65\text{ dB}$.
+   - Accelerometer Band RMS: Mean $0.012829\text{ m/s}^2$.
+   - Motion Level: Mean $0.020186\text{ m/s}^2$.
+*(After 15.4s, the user lifted the device to end the recording, registering motion level spikes up to $0.149\text{ m/s}^2$ and band RMS settling).*
+
 ![iQOO Hardware Verification Comparison](images/iqoo_trial_comparison.png)
 
 ---
