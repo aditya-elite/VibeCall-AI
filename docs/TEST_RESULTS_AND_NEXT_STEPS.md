@@ -52,6 +52,27 @@ Sec | Raw RMS   | Raw Peak  | RNNoise RMS | RNNoise Peak | Noise Attenuation / S
 14s | 0.001172  | 0.009094  | 0.000432    | 0.001923     | Trailing Noise Cut (+8.66 dB)
 ```
 
+### Detailed Live Feature Extraction Readings (Trial 7: Step 3 Validation on iQOO 15):
+Trial 7 (`20260912_145725_604_cheek_speaking_in_quiet`) validated the complete Step 3 sensing and feature pipeline across 124 frames (128 ms hop spacing, 15.84s total duration, 6,400 IMU samples):
+
+| Feature Dimension | Minimum | Maximum | Mean | Std Dev | Physical / Algorithmic Significance |
+| :--- | :--- | :--- | :--- | :--- | :--- |
+| `microphone_rms` | 0.000000 | 0.077645 | 0.018136 | 0.021726 | Normalized audio RMS level |
+| `microphone_log_energy_db` | -120.00 dB | -22.20 dB | -70.44 dB | 42.49 dB | Audio dynamic range across quiet vs speech |
+| `accelerometer_band_energy` | 0.000041 | 0.003241 | 0.000216 | 0.000483 | $\text{m}^2/\text{s}^4$ (80–185 Hz vocal resonance power) |
+| `accelerometer_band_rms` | 0.006379 | 0.056930 | 0.012036 | 0.008454 | $\text{m/s}^2$ (4th-order Butterworth bandpass RMS) |
+| `phone_motion_level` | 0.004638 | 0.885582 | 0.058429 | 0.124287 | $\text{m/s}^2$ (5 Hz lowpass hand movement $\sigma$) |
+| `sensor_sample_count` | **41.00** | **41.00** | **41.00** | **0.00** | Exactly 41 samples per 100 ms buffer (nominal $\approx 40$) |
+| `sensor_rate_hz` | **400.00** | **400.00** | **400.00** | **0.00** | Ultra-stable STMicroelectronics hardware IMU clock |
+| `sensor_reliability` | **1.0000** | **1.0000** | **1.0000** | **0.00** | Perfect IMU health score; zero timing gaps or drops |
+| `contact_quality` | 0.0127 | 0.1067 | 0.0222 | 0.0131 | Experimental composite contact heuristic |
+
+#### Protocol Phase Segregation in Trial 7:
+1. **Pre-Speech Baseline (0.8s – 3.2s, $N=19$)**: Digital audio silence (mean $-106.49\text{ dB}$). Accelerometer vocal band RMS rests at baseline floor ($0.009614\text{ m/s}^2$, min $0.007114\text{ m/s}^2$). Motion level is steady ($0.029769\text{ m/s}^2$).
+2. **Active Voicing (4.0s – 12.0s, $N=62$)**: Natural speech bursts reach $-22.20\text{ dB}$ mic log energy. Bandpass vocal RMS rises to $0.016312\text{ m/s}^2$ and peaks at $0.027114\text{ m/s}^2$. Motion level remains low and stable (mean $0.020276\text{ m/s}^2$).
+3. **Post-Speech Silence (12.5s – 14.5s, $N=16$)**: Mic energy drops back to $-117.93\text{ dB}$, and band RMS returns to $0.007285\text{ m/s}^2$ floor.
+4. **Session Termination & Lift ($> 15.0\text{s}$, $N=6$)**: Gross hand movement spikes `phone_motion_level` to $0.297649\text{ m/s}^2$, clearly segregated from speech vibration.
+
 ![iQOO Hardware Verification Comparison](images/iqoo_trial_comparison.png)
 
 ---
@@ -261,3 +282,20 @@ Before setting thresholds or retraining the fusion model, perform the following 
    - Inspect the distribution of `accelerometer_band_rms` and `phone_motion_level` during Phase 1 vs Phase 2.
    - Verify separation between silence and phonation before training any classifier or gating model.
 
+### Step 3 Empirical Trial 7 Calibration Results (Validated on iQOO 15)
+The calibration protocol above was executed on the iQOO 15 (`20260912_145725_604_cheek_speaking_in_quiet`, 15.84s duration, 6,400 IMU samples at 400.00 Hz):
+- **Phase 1: Pre-Speech Silent Baseline (0.8s – 3.2s, N=19)**:
+  - Microphone log energy: Mean -106.49 dB (baseline digital noise floor).
+  - Accelerometer vocal band RMS (80–185 Hz): Mean 0.009614 m/s² (floor 0.007114 m/s²).
+  - Phone motion level (5 Hz lowpass jitter): Mean 0.029769 m/s² (steady cheek hold).
+- **Phase 2: Active Phonation (4.0s – 12.0s, N=62)**:
+  - Microphone log energy: Mean -34.56 dB (peaking at -22.20 dB).
+  - Accelerometer vocal band RMS (80–185 Hz): Peaks to 0.016312 m/s² and 0.027114 m/s² during resonant voiced speech.
+  - Phone motion level: Mean 0.020276 m/s² (quiet, stable cheek contact).
+- **Phase 3: Post-Speech Silence (12.5s – 14.5s, N=16)**:
+  - Microphone log energy: Mean -117.93 dB.
+  - Accelerometer vocal band RMS: Returns to 0.007285 m/s² floor.
+- **Phase 4: Phone Repositioning / Lift (> 15.0s, N=6)**:
+  - Hand motion level: Spikes to 0.297649 m/s² due to gross device movement, while band energy remains distinct from speech phonation.
+
+**Conclusion for Step 4 Retraining**: The 80–185 Hz bandpass energy successfully discriminates vocal resonance from low-frequency hand movement jitter, avoiding the saturation failure mode of raw XYZ instantaneous readings.

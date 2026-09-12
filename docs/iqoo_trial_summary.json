@@ -155,16 +155,16 @@
     "accelerometer_name": "lsm6dsvx Accelerometer Non-wakeup",
     "sensor_rate": 400.00001487732516,
     "duration_s": 15.84,
-    "raw_rms": 0.02826148883153608,
+    "raw_rms": 0.028261486440896988,
     "raw_peak": 0.31451416015625,
-    "gated_rms": 0.0034957705812218355,
+    "gated_rms": 0.0034957705065608025,
     "gated_peak": 0.053131103515625,
-    "rn_rms": 0.027388465145674,
+    "rn_rms": 0.02738846465945244,
     "rn_peak": 0.22857666015625,
     "avg_trust": 0.136325232083759,
     "inferences": 124,
     "noise_suppression_db": 0.0,
-    "acc_vib_mean": 0.13764257690753123,
-    "acc_vib_max": 2.878736834198836
+    "acc_vib_mean": 0.13765054986965777,
+    "acc_vib_max": 2.87878003544529
   }
 ]
