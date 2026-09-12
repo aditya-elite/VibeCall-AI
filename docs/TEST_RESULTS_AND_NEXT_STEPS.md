@@ -734,3 +734,33 @@ Record 3 new standardized sessions on the iQOO 15:
    - Same passage read against cheek while playing 75 dB traffic/cafeteria noise via external speaker.
    - *Goal*: A/B comparative listening across `microphone.wav`, `microphone_rnnoise.wav`, and `microphone_fusion.wav`.
 
+---
+
+## 9. Conservative Speech-Clarity Output (`microphone_clarity.wav`)
+
+### Motivation & Empirical Calibration from Trial 23
+Analysis of live Trial 23 (`sessions/iqoo_sessions/20260912_214314_099_cheek_speaking_with_background_noise`) revealed:
+- **Speech Attenuation**: RNNoise reduced speech energy by ~5.0 dB (raw RMS: -51.95 dBFS vs RNNoise RMS: -56.92 dBFS), primarily dampening the consonant presence band (1–3.5 kHz).
+- **Algorithmic Output Lag**: RNNoise output exhibits a measurable delay of **320 samples @ 16 kHz** (~20.0 ms) due to internal frame buffering and STFT analysis windows.
+- **Correlation Improvement**:
+  - Unaligned Pearson correlation: `-0.0204`
+  - Aligned Pearson correlation (320-sample delay): `+0.5257`
+  - Active voiced speech correlation: **`+0.6116` to `+0.646`**
+- **Provisional Status**: The 320-sample delay is treated strictly as a **provisional calibration** for the iQOO 15 hardware profile, not universally verified across arbitrary Android HAL/DSP pipelines.
+
+### Architecture & Safety Guarantees
+1. **Zero Impact on Existing Tracks**:
+   - `microphone.wav`, `microphone_rnnoise.wav`, and `microphone_fusion.wav` remain completely untouched with invariant sample hashes.
+   - Clarity maintains an independent instance of `SafeGainController` so primary Fusion controller decisions are never stepped or modified.
+2. **Streaming FIFO Alignment**:
+   - Consumes *exactly* the sample count RNNoise emits per call, including trailing samples during `flush()`.
+3. **Gentle Multi-Stage Signal Processing**:
+   - **80 Hz 2nd-order Butterworth HPF**: Eliminates mechanical sub-audible low rumble.
+   - **2.5 kHz Peaking Presence EQ**: Subtle +1.5 dB boost ($Q=0.85$) restoring speech clarity.
+   - **Smooth 75/25 Dry-Mix**: 25% delayed raw audio blended with 75% RNNoise during speech; 100% RNNoise during confirmed pauses. Slew-rate limited to prevent boundary clicks.
+   - **Speech-Aware Loudness Gain**: Compensates for RNNoise speech attenuation with a hard ceiling at **+6.0 dB**; silence and noise floors are never boosted.
+   - **Soft Limiter & Final Hard Safety Clamp**: -1.0 dBFS soft limiter followed by a hard clamp strictly bounding all samples to `[-32768, 32767]`.
+4. **4-Way In-App Audition**:
+   - The UI provides immediate A/B/C/D listening comparisons: **Play RNNoise**, **Play Raw Mic**, **Play Fusion (Exp.)**, and **Play Clarity (Exp.)**.
+
+

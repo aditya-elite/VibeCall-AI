@@ -51,7 +51,8 @@ data class SessionResult(
     val rnnoiseWavFile: File? = null,
     val featuresFile: File? = null,
     val fusionWavFile: File? = null,
-    val fusionDecisionsFile: File? = null
+    val fusionDecisionsFile: File? = null,
+    val clarityWavFile: File? = null
 )
 
 data class TelemetryData(
@@ -165,7 +166,9 @@ data class RnnoiseRuntimeStats(
     val attenuationDb: Double,
     val meanAbsoluteDiff: Double,
     val differentSamplePercentage: Double,
-    val actualAudioSource: String
+    val actualAudioSource: String,
+    val unalignedCorrelation: Double = 0.0,
+    val alignedCorrelation: Double = 0.0
 )
 
 class SessionRecorder(
@@ -241,6 +244,27 @@ class SessionRecorder(
     private var rnnoisePcmFile: File? = null
     private var rnnoiseWavFile: File? = null
 
+    // Conservative Speech-Clarity Processor
+    private val clarityProcessor = ClarityAudioProcessor()
+    private var clarityPcmFile: File? = null
+    private var clarityWavFile: File? = null
+
+    // Delay-compensated diagnostic FIFOs & accumulators
+    private val diagnosticRawDelayFifo = RawAudioDelayFifo(ClarityAudioProcessor.RNNOISE_DELAY_SAMPLES_16K)
+    private val diagnosticRawUnalignedFifo = java.util.ArrayDeque<Short>()
+    private var diagnosticComparedIndex = 0L
+    private var diagnosticValidAlignedCount = 0L
+    private var diagSumUnalignedX = 0.0
+    private var diagSumUnalignedX2 = 0.0
+    private var diagSumUnalignedXY = 0.0
+    private var diagSumAlignedX = 0.0
+    private var diagSumAlignedX2 = 0.0
+    private var diagSumAlignedXY = 0.0
+    private var diagSumY = 0.0
+    private var diagSumY2 = 0.0
+    private var diagSumAlignedAbsDiff = 0.0
+    private var diagAlignedDiffCount = 0L
+
     // Step 3: Rolling Accelerometer Buffer & Feature Extraction
     private val filterBank = AccelFilterBank(400.0)
     private val rollingAccelBuffer = RollingAccelBuffer(RollingAccelBuffer.DEFAULT_WINDOW_DURATION_NS) // 350 ms (retains >= 300 ms)
@@ -306,6 +330,9 @@ class SessionRecorder(
     val latestRnnoiseWav: File?
         get() = rnnoiseWavFile
 
+    val latestClarityWav: File?
+        get() = clarityWavFile
+
     val latestFeaturesFile: File?
         get() = featuresFile
 
@@ -358,6 +385,24 @@ class SessionRecorder(
         rnnoiseWavFile = File(directory, "microphone_rnnoise.wav")
         fusionPcmFile = File(directory, "microphone_fusion.pcm")
         fusionWavFile = File(directory, "microphone_fusion.wav")
+        clarityPcmFile = File(directory, "microphone_clarity.pcm")
+        clarityWavFile = File(directory, "microphone_clarity.wav")
+
+        clarityProcessor.reset()
+        diagnosticRawDelayFifo.reset()
+        diagnosticRawUnalignedFifo.clear()
+        diagnosticComparedIndex = 0L
+        diagnosticValidAlignedCount = 0L
+        diagSumUnalignedX = 0.0
+        diagSumUnalignedX2 = 0.0
+        diagSumUnalignedXY = 0.0
+        diagSumAlignedX = 0.0
+        diagSumAlignedX2 = 0.0
+        diagSumAlignedXY = 0.0
+        diagSumY = 0.0
+        diagSumY2 = 0.0
+        diagSumAlignedAbsDiff = 0.0
+        diagAlignedDiffCount = 0L
 
         sensorWriter = BufferedWriter(
             OutputStreamWriter(FileOutputStream(File(directory, "accelerometer.csv")), Charsets.UTF_8),
@@ -545,6 +590,13 @@ class SessionRecorder(
                     fusionPcm.delete()
                 }
 
+                val clarityPcm = clarityPcmFile
+                val clarityWav = clarityWavFile
+                if (clarityPcm != null && clarityWav != null && clarityPcm.exists() && clarityPcm.length() > 0) {
+                    writeWav(clarityPcm, clarityWav, AUDIO_SAMPLE_RATE, 1, 16)
+                    clarityPcm.delete()
+                }
+
                 val fusionStats = fusionConfidenceModel?.let { model ->
                     FusionRuntimeStats(
                         backendStatus = latestBackendStatus,
@@ -562,6 +614,7 @@ class SessionRecorder(
                 )
 
                 val rnnoiseStats = computeRnnoiseRuntimeStats()
+                val clarityStats = clarityProcessor.getDiagnostics()
 
                 fusionGateModel?.close()
                 fusionGateModel = null
@@ -584,7 +637,7 @@ class SessionRecorder(
                 val directory = sessionDirectory ?: error("Missing session directory")
                 val measuredRate = measuredSensorRateHz()
                 val avgTrust = if (trustInferenceCount > 0) totalTrustValue / trustInferenceCount else 1.0
-                writeMetadata(directory, measuredRate, avgTrust, fusionStats, rnnoiseStats)
+                writeMetadata(directory, measuredRate, avgTrust, fusionStats, rnnoiseStats, clarityStats)
                 val zip = zipSession(directory)
 
                 SessionResult(
@@ -597,7 +650,8 @@ class SessionRecorder(
                     rnnoiseWavFile = rnnoiseWav,
                     featuresFile = featuresFile,
                     fusionWavFile = fusionWav,
-                    fusionDecisionsFile = fusionDecisionsFile
+                    fusionDecisionsFile = fusionDecisionsFile,
+                    clarityWavFile = clarityWav
                 )
             }
             onComplete(result)
@@ -707,12 +761,35 @@ class SessionRecorder(
         } else {
             0.0
         }
-        val meanAbsDiff = if (rnnoiseComparedSamplesCount > 0) {
+        val n = diagnosticValidAlignedCount.toDouble()
+        val unalignedCorr = if (n > 100) {
+            val num = diagSumUnalignedXY - (diagSumUnalignedX * diagSumY / n)
+            val denX = diagSumUnalignedX2 - (diagSumUnalignedX * diagSumUnalignedX / n)
+            val denY = diagSumY2 - (diagSumY * diagSumY / n)
+            if (denX > 1e-9 && denY > 1e-9) {
+                (num / (kotlin.math.sqrt(denX) * kotlin.math.sqrt(denY))).coerceIn(-1.0, 1.0)
+            } else 0.0
+        } else 0.0
+
+        val alignedCorr = if (n > 100) {
+            val num = diagSumAlignedXY - (diagSumAlignedX * diagSumY / n)
+            val denX = diagSumAlignedX2 - (diagSumAlignedX * diagSumAlignedX / n)
+            val denY = diagSumY2 - (diagSumY * diagSumY / n)
+            if (denX > 1e-9 && denY > 1e-9) {
+                (num / (kotlin.math.sqrt(denX) * kotlin.math.sqrt(denY))).coerceIn(-1.0, 1.0)
+            } else 0.0
+        } else 0.0
+
+        val meanAbsDiff = if (diagnosticValidAlignedCount > 0) {
+            diagSumAlignedAbsDiff / diagnosticValidAlignedCount.toDouble()
+        } else if (rnnoiseComparedSamplesCount > 0) {
             rnnoiseSumAbsoluteDiff / rnnoiseComparedSamplesCount.toDouble()
         } else {
             0.0
         }
-        val diffPct = if (rnnoiseComparedSamplesCount > 0) {
+        val diffPct = if (diagnosticValidAlignedCount > 0) {
+            (diagAlignedDiffCount.toDouble() * 100.0) / diagnosticValidAlignedCount.toDouble()
+        } else if (rnnoiseComparedSamplesCount > 0) {
             (rnnoiseDifferentSamplesCount.toDouble() * 100.0) / rnnoiseComparedSamplesCount.toDouble()
         } else {
             0.0
@@ -729,7 +806,9 @@ class SessionRecorder(
             attenuationDb = attenuationDb,
             meanAbsoluteDiff = meanAbsDiff,
             differentSamplePercentage = diffPct,
-            actualAudioSource = audioSourceName
+            actualAudioSource = audioSourceName,
+            unalignedCorrelation = unalignedCorr,
+            alignedCorrelation = alignedCorr
         )
     }
 
@@ -972,6 +1051,7 @@ class SessionRecorder(
             val gatedStream = gatedFile?.let { FileOutputStream(it) }
             val rnnoiseStream = rnnoisePcmFile?.let { FileOutputStream(it) }
             val fusionStream = fusionFile?.let { FileOutputStream(it) }
+            val clarityStream = clarityPcmFile?.let { FileOutputStream(it) }
             try {
                 FileOutputStream(outputFile).use { output ->
                     while (recording) {
@@ -999,6 +1079,12 @@ class SessionRecorder(
                                 }
                                 val mean = sum / numSamples
                                 val variance = max(0.0, (sumSq / numSamples) - (mean * mean)).toFloat()
+
+                                // Push raw audio to diagnostic FIFOs
+                                diagnosticRawDelayFifo.push(shortSamples, numSamples)
+                                for (i in 0 until numSamples) {
+                                    diagnosticRawUnalignedFifo.addLast(shortSamples[i])
+                                }
 
                                 // 3. Audio-relative window timing and aligned accelerometer snapshots
                                 val startSampleIndex = currentAudioSampleIndex
@@ -1144,7 +1230,21 @@ class SessionRecorder(
                                     sensorAlignmentLagMs = windowFeatures.sensorAlignmentLagMs.toFloat()
                                 )
 
+                                // Push raw audio and features to Clarity processor delay line
+                                clarityProcessor.pushRawAudioAndFeatures(
+                                    rawSamples = shortSamples,
+                                    length = numSamples,
+                                    microphoneLogEnergyDb = windowFeatures.microphoneLogEnergyDb.toFloat(),
+                                    microphonePitchReliable = windowFeatures.microphonePitchReliable.toFloat(),
+                                    modelConfidence = inferenceResult.confidence,
+                                    modelReliable = inferenceResult.modelReliable,
+                                    sensorReliability = windowFeatures.sensorReliability.toFloat(),
+                                    phoneMotionLevel = windowFeatures.phoneMotionLevel.toFloat(),
+                                    sensorAlignmentLagMs = windowFeatures.sensorAlignmentLagMs.toFloat()
+                                )
+
                                 if (denoised16k != null && denoised16k.isNotEmpty()) {
+                                    // 6a. Primary Fusion Output (uses existing safeGainController)
                                     val fusionShorts = ShortArray(denoised16k.size)
                                     val decision = safeGainController.applyGainToFrame(
                                         inputShorts = denoised16k,
@@ -1163,6 +1263,48 @@ class SessionRecorder(
                                             fusionBytes[i * 2 + 1] = ((s shr 8) and 0xFF).toByte()
                                         }
                                         fusionStream.write(fusionBytes)
+                                    }
+
+                                    // 6b. Conservative Speech-Clarity Output (uses independent controller & FIFOs)
+                                    val clarityShorts = ShortArray(denoised16k.size)
+                                    clarityProcessor.processRnnoiseChunk(denoised16k, clarityShorts, denoised16k.size)
+                                    if (clarityStream != null) {
+                                        val clarityBytes = ByteArray(clarityShorts.size * 2)
+                                        for (i in clarityShorts.indices) {
+                                            val s = clarityShorts[i].toInt()
+                                            clarityBytes[i * 2] = (s and 0xFF).toByte()
+                                            clarityBytes[i * 2 + 1] = ((s shr 8) and 0xFF).toByte()
+                                        }
+                                        clarityStream.write(clarityBytes)
+                                    }
+
+                                    // 6c. Diagnostic Correlation & Difference Accumulation with 320-sample provisional delay alignment
+                                    val tempAligned = ShortArray(1)
+                                    for (i in denoised16k.indices) {
+                                        diagnosticRawDelayFifo.pop(1, tempAligned, 0)
+                                        val xAligned = tempAligned[0].toDouble()
+                                        val xUnaligned = if (diagnosticRawUnalignedFifo.isNotEmpty()) diagnosticRawUnalignedFifo.removeFirst().toDouble() else 0.0
+                                        val y = denoised16k[i].toDouble()
+
+                                        if (diagnosticComparedIndex >= ClarityAudioProcessor.RNNOISE_DELAY_SAMPLES_16K) {
+                                            diagSumUnalignedX += xUnaligned
+                                            diagSumUnalignedX2 += xUnaligned * xUnaligned
+                                            diagSumUnalignedXY += xUnaligned * y
+
+                                            diagSumAlignedX += xAligned
+                                            diagSumAlignedX2 += xAligned * xAligned
+                                            diagSumAlignedXY += xAligned * y
+
+                                            diagSumY += y
+                                            diagSumY2 += y * y
+
+                                            diagSumAlignedAbsDiff += kotlin.math.abs(xAligned - y)
+                                            if (tempAligned[0] != denoised16k[i]) {
+                                                diagAlignedDiffCount++
+                                            }
+                                            diagnosticValidAlignedCount++
+                                        }
+                                        diagnosticComparedIndex++
                                     }
 
                                     val decisionRow = FusionDecisionRow(
@@ -1222,6 +1364,48 @@ class SessionRecorder(
                             rnnoiseOutputSamplesCount += flushed16k.size
                             rnnoiseStream.write(rnnoiseBytes)
                             fusionStream?.write(fusionBytes)
+
+                            // Clarity flush: consume exactly the number of samples RNNoise returned
+                            if (clarityStream != null) {
+                                val clarityFlushed = ShortArray(flushed16k.size)
+                                clarityProcessor.processRnnoiseChunk(flushed16k, clarityFlushed, flushed16k.size)
+                                val clarityBytes = ByteArray(clarityFlushed.size * 2)
+                                for (i in clarityFlushed.indices) {
+                                    val s = clarityFlushed[i].toInt()
+                                    clarityBytes[i * 2] = (s and 0xFF).toByte()
+                                    clarityBytes[i * 2 + 1] = ((s shr 8) and 0xFF).toByte()
+                                }
+                                clarityStream.write(clarityBytes)
+                            }
+
+                            // Diagnostic correlation for flushed samples
+                            val tempAligned = ShortArray(1)
+                            for (i in flushed16k.indices) {
+                                diagnosticRawDelayFifo.pop(1, tempAligned, 0)
+                                val xAligned = tempAligned[0].toDouble()
+                                val xUnaligned = if (diagnosticRawUnalignedFifo.isNotEmpty()) diagnosticRawUnalignedFifo.removeFirst().toDouble() else 0.0
+                                val y = flushed16k[i].toDouble()
+
+                                if (diagnosticComparedIndex >= ClarityAudioProcessor.RNNOISE_DELAY_SAMPLES_16K) {
+                                    diagSumUnalignedX += xUnaligned
+                                    diagSumUnalignedX2 += xUnaligned * xUnaligned
+                                    diagSumUnalignedXY += xUnaligned * y
+
+                                    diagSumAlignedX += xAligned
+                                    diagSumAlignedX2 += xAligned * xAligned
+                                    diagSumAlignedXY += xAligned * y
+
+                                    diagSumY += y
+                                    diagSumY2 += y * y
+
+                                    diagSumAlignedAbsDiff += kotlin.math.abs(xAligned - y)
+                                    if (tempAligned[0] != flushed16k[i]) {
+                                        diagAlignedDiffCount++
+                                    }
+                                    diagnosticValidAlignedCount++
+                                }
+                                diagnosticComparedIndex++
+                            }
                         }
                     }
                 }
@@ -1229,6 +1413,7 @@ class SessionRecorder(
                 gatedStream?.close()
                 rnnoiseStream?.close()
                 fusionStream?.close()
+                clarityStream?.close()
             }
         } catch (error: Exception) {
             audioReadError = error.message ?: error.javaClass.simpleName
@@ -1269,7 +1454,8 @@ class SessionRecorder(
         measuredRate: Double,
         averageTrust: Double,
         fusionStats: FusionRuntimeStats,
-        rnnoiseStats: RnnoiseRuntimeStats
+        rnnoiseStats: RnnoiseRuntimeStats,
+        clarityStats: ClarityDiagnostics
     ) {
         val utcFormatter = SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss.SSS'Z'", Locale.US).apply {
             timeZone = TimeZone.getTimeZone("UTC")
@@ -1305,6 +1491,10 @@ class SessionRecorder(
             // RNNoise diagnostics
             put("rnnoise_enabled", rnnoiseWavFile?.exists() == true)
             put("rnnoise_audio_file", if (rnnoiseWavFile?.exists() == true) "microphone_rnnoise.wav" else JSONObject.NULL)
+            put("rnnoise_delay_samples_16k", ClarityAudioProcessor.RNNOISE_DELAY_SAMPLES_16K)
+            put("rnnoise_delay_ms", ClarityAudioProcessor.RNNOISE_DELAY_MS)
+            put("raw_rnnoise_unaligned_correlation", rnnoiseStats.unalignedCorrelation)
+            put("raw_rnnoise_aligned_correlation", rnnoiseStats.alignedCorrelation)
             val rnnoiseDiag = JSONObject().apply {
                 put("initialized", rnnoiseStats.initialized)
                 put("frame_count", rnnoiseStats.frameCount)
@@ -1317,8 +1507,23 @@ class SessionRecorder(
                 put("mean_absolute_diff", rnnoiseStats.meanAbsoluteDiff)
                 put("different_sample_percentage", rnnoiseStats.differentSamplePercentage)
                 put("actual_audio_source", rnnoiseStats.actualAudioSource)
+                put("delay_samples_16k", ClarityAudioProcessor.RNNOISE_DELAY_SAMPLES_16K)
+                put("delay_ms", ClarityAudioProcessor.RNNOISE_DELAY_MS)
+                put("unaligned_correlation", rnnoiseStats.unalignedCorrelation)
+                put("aligned_correlation", rnnoiseStats.alignedCorrelation)
             }
             put("rnnoise_diagnostics", rnnoiseDiag)
+
+            // Clarity track
+            put("clarity_enabled", clarityWavFile?.exists() == true)
+            put("clarity_audio_file", if (clarityWavFile?.exists() == true) "microphone_clarity.wav" else JSONObject.NULL)
+            put("clarity_dry_mix_ratio", clarityStats.dryMixRatio)
+            put("clarity_presence_eq_enabled", clarityStats.presenceEqEnabled)
+            put("clarity_loudness_gain_mean_db", clarityStats.loudnessGainMeanDb)
+            put("clarity_loudness_gain_max_db", clarityStats.loudnessGainMaxDb)
+            put("clarity_limiter_threshold_dbfs", clarityStats.limiterThresholdDbfs)
+            put("clarity_observed_peak_dbfs", clarityStats.observedPeakDbfs)
+            put("clarity_clipped_sample_count", clarityStats.clippedSampleCount)
 
             put("features_file", if (featuresFile?.exists() == true) "features.csv" else JSONObject.NULL)
             put("feature_rolling_window_ms", 100)

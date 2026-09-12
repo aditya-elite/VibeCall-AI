@@ -39,6 +39,7 @@ class MainActivity : AppCompatActivity() {
     private lateinit var playDenoisedButton: Button
     private lateinit var playRawButton: Button
     private lateinit var playFusionButton: Button
+    private lateinit var playClarityButton: Button
     private lateinit var playbackStatusBadge: TextView
     private lateinit var playbackHelperText: TextView
     private lateinit var statusText: TextView
@@ -55,9 +56,10 @@ class MainActivity : AppCompatActivity() {
     private var latestDenoisedWav: File? = null
     private var latestRawWav: File? = null
     private var latestFusionWav: File? = null
+    private var latestClarityWav: File? = null
     private var mediaPlayer: MediaPlayer? = null
 
-    private enum class AudioTrack { NONE, RAW, DENOISED, FUSION }
+    private enum class AudioTrack { NONE, RAW, DENOISED, FUSION, CLARITY }
     private var currentlyPlaying = AudioTrack.NONE
 
     private var recordingStartedMs = 0L
@@ -99,6 +101,7 @@ class MainActivity : AppCompatActivity() {
         playDenoisedButton = findViewById(R.id.playDenoisedButton)
         playRawButton = findViewById(R.id.playRawButton)
         playFusionButton = findViewById(R.id.playFusionButton)
+        playClarityButton = findViewById(R.id.playClarityButton)
         playbackStatusBadge = findViewById(R.id.playbackStatusBadge)
         playbackHelperText = findViewById(R.id.playbackHelperText)
         statusText = findViewById(R.id.statusText)
@@ -239,6 +242,9 @@ class MainActivity : AppCompatActivity() {
         playFusionButton.setOnClickListener {
             playAudio(latestFusionWav, AudioTrack.FUSION)
         }
+        playClarityButton.setOnClickListener {
+            playAudio(latestClarityWav, AudioTrack.CLARITY)
+        }
     }
 
     private fun requestPermissionAndStart() {
@@ -256,6 +262,7 @@ class MainActivity : AppCompatActivity() {
         playDenoisedButton.isEnabled = false
         playRawButton.isEnabled = false
         playFusionButton.isEnabled = false
+        playClarityButton.isEnabled = false
         playbackStatusBadge.text = "RECORDING"
         playbackStatusBadge.setTextColor(ContextCompat.getColor(this, R.color.vibe_recording_red))
         playbackHelperText.text = "Recording in progress… Speak normally and keep phone in place."
@@ -306,11 +313,12 @@ class MainActivity : AppCompatActivity() {
                     latestDenoisedWav = session.rnnoiseWavFile ?: File(session.sessionDirectory, "microphone_rnnoise.wav")
                     latestRawWav = File(session.sessionDirectory, "microphone.wav")
                     latestFusionWav = session.fusionWavFile ?: File(session.sessionDirectory, "microphone_fusion.wav")
+                    latestClarityWav = session.clarityWavFile ?: File(session.sessionDirectory, "microphone_clarity.wav")
                     updatePlaybackUi(isPlaying = false, track = AudioTrack.NONE)
 
                     statusText.text = String.format(
                         Locale.US,
-                        "Saved successfully.\nAccelerometer: %,d samples at %.1f Hz\nAudio: %,d samples\nFiles: microphone.wav, microphone_rnnoise.wav, microphone_fusion.wav\nExport: %s",
+                        "Saved successfully.\nAccelerometer: %,d samples at %.1f Hz\nAudio: %,d samples\nFiles: microphone.wav, microphone_rnnoise.wav, microphone_fusion.wav, microphone_clarity.wav\nExport: %s",
                         session.accelerometerSamples,
                         session.measuredSensorRateHz,
                         session.audioSamples,
@@ -384,10 +392,12 @@ class MainActivity : AppCompatActivity() {
         val hasDenoised = latestDenoisedWav?.exists() == true
         val hasRaw = latestRawWav?.exists() == true
         val hasFusion = latestFusionWav?.exists() == true
+        val hasClarity = latestClarityWav?.exists() == true
 
         playDenoisedButton.isEnabled = !recorder.isRecording && hasDenoised
         playRawButton.isEnabled = !recorder.isRecording && hasRaw
         playFusionButton.isEnabled = !recorder.isRecording && hasFusion
+        playClarityButton.isEnabled = !recorder.isRecording && hasClarity
 
         if (isPlaying) {
             when (track) {
@@ -395,6 +405,7 @@ class MainActivity : AppCompatActivity() {
                     playDenoisedButton.text = "⏹ Stop RNNoise"
                     playRawButton.text = "Play Raw Mic"
                     playFusionButton.text = "Play Fusion (Exp.)"
+                    playClarityButton.text = "Play Clarity (Exp.)"
                     playbackStatusBadge.text = "PLAYING RNNOISE"
                     playbackStatusBadge.setTextColor(ContextCompat.getColor(this, R.color.vibe_success_green))
                     playbackHelperText.text = "Playing RNNoise baseline audio (verified neural noise suppression)."
@@ -403,6 +414,7 @@ class MainActivity : AppCompatActivity() {
                     playDenoisedButton.text = "Play RNNoise"
                     playRawButton.text = "⏹ Stop Raw"
                     playFusionButton.text = "Play Fusion (Exp.)"
+                    playClarityButton.text = "Play Clarity (Exp.)"
                     playbackStatusBadge.text = "PLAYING RAW AUDIO"
                     playbackStatusBadge.setTextColor(ContextCompat.getColor(this, R.color.vibe_primary))
                     playbackHelperText.text = "Playing raw capture: ${recorder.currentMicrophoneCharacterization}."
@@ -411,9 +423,19 @@ class MainActivity : AppCompatActivity() {
                     playDenoisedButton.text = "Play RNNoise"
                     playRawButton.text = "Play Raw Mic"
                     playFusionButton.text = "⏹ Stop Fusion"
+                    playClarityButton.text = "Play Clarity (Exp.)"
                     playbackStatusBadge.text = "PLAYING FUSION (EXP.)"
                     playbackStatusBadge.setTextColor(ContextCompat.getColor(this, R.color.vibe_fusion_purple))
                     playbackHelperText.text = "Playing experimental fusion audio (SafeGainController + RNNoise neural baseline)."
+                }
+                AudioTrack.CLARITY -> {
+                    playDenoisedButton.text = "Play RNNoise"
+                    playRawButton.text = "Play Raw Mic"
+                    playFusionButton.text = "Play Fusion (Exp.)"
+                    playClarityButton.text = "⏹ Stop Clarity"
+                    playbackStatusBadge.text = "PLAYING CLARITY (EXP.)"
+                    playbackStatusBadge.setTextColor(ContextCompat.getColor(this, R.color.vibe_accent))
+                    playbackHelperText.text = "Playing experimental speech clarity track (provisional 320-sample delay + presence EQ + loudness gain)."
                 }
                 AudioTrack.NONE -> Unit
             }
@@ -421,14 +443,15 @@ class MainActivity : AppCompatActivity() {
             playDenoisedButton.text = "Play RNNoise"
             playRawButton.text = "Play Raw Mic"
             playFusionButton.text = "Play Fusion (Exp.)"
-            if (hasDenoised || hasRaw || hasFusion) {
+            playClarityButton.text = "Play Clarity (Exp.)"
+            if (hasDenoised || hasRaw || hasFusion || hasClarity) {
                 playbackStatusBadge.text = "READY TO AUDITION"
                 playbackStatusBadge.setTextColor(ContextCompat.getColor(this, R.color.vibe_primary))
-                playbackHelperText.text = "Tap to audition: Raw vs RNNoise (baseline) vs Fusion (experimental)."
+                playbackHelperText.text = "Tap to audition: Raw vs RNNoise (baseline) vs Fusion (experimental) vs Clarity (experimental)."
             } else {
                 playbackStatusBadge.text = "NO RECORDING"
                 playbackStatusBadge.setTextColor(ContextCompat.getColor(this, R.color.vibe_text_secondary))
-                playbackHelperText.text = "Record a test session to audition RNNoise baseline vs raw audio vs experimental fusion."
+                playbackHelperText.text = "Record a test session to audition RNNoise baseline vs raw audio vs experimental fusion vs clarity."
             }
         }
     }

@@ -563,22 +563,48 @@
                             app:strokeWidth="1.5dp" />
                     </LinearLayout>
 
-                    <com.google.android.material.button.MaterialButton
-                        android:id="@+id/playFusionButton"
+                    <LinearLayout
                         android:layout_width="match_parent"
-                        android:layout_height="50dp"
+                        android:layout_height="wrap_content"
                         android:layout_marginTop="8dp"
-                        android:enabled="false"
-                        android:text="Play Fusion (Exp.)"
-                        android:textColor="#FFFFFF"
-                        android:textSize="12.5sp"
-                        android:textStyle="bold"
-                        app:backgroundTint="@color/vibe_fusion_purple"
-                        app:cornerRadius="12dp"
-                        app:icon="@drawable/ic_tune"
-                        app:iconGravity="textStart"
-                        app:iconPadding="8dp"
-                        app:iconTint="#FFFFFF" />
+                        android:orientation="horizontal">
+
+                        <com.google.android.material.button.MaterialButton
+                            android:id="@+id/playFusionButton"
+                            android:layout_width="0dp"
+                            android:layout_height="50dp"
+                            android:layout_marginEnd="6dp"
+                            android:layout_weight="1"
+                            android:enabled="false"
+                            android:text="Play Fusion (Exp.)"
+                            android:textColor="#FFFFFF"
+                            android:textSize="11.5sp"
+                            android:textStyle="bold"
+                            app:backgroundTint="@color/vibe_fusion_purple"
+                            app:cornerRadius="12dp"
+                            app:icon="@drawable/ic_tune"
+                            app:iconGravity="textStart"
+                            app:iconPadding="6dp"
+                            app:iconTint="#FFFFFF" />
+
+                        <com.google.android.material.button.MaterialButton
+                            android:id="@+id/playClarityButton"
+                            android:layout_width="0dp"
+                            android:layout_height="50dp"
+                            android:layout_marginStart="6dp"
+                            android:layout_weight="1"
+                            android:enabled="false"
+                            android:text="Play Clarity (Exp.)"
+                            android:textColor="#FFFFFF"
+                            android:textSize="11.5sp"
+                            android:textStyle="bold"
+                            app:backgroundTint="@color/vibe_accent"
+                            app:cornerRadius="12dp"
+                            app:icon="@drawable/ic_wave"
+                            app:iconGravity="textStart"
+                            app:iconPadding="6dp"
+                            app:iconTint="#FFFFFF" />
+                    </LinearLayout>
                 </LinearLayout>
             </LinearLayout>
         </com.google.android.material.card.MaterialCardView>
