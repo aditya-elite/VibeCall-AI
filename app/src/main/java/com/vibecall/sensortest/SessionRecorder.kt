@@ -194,6 +194,25 @@ class SessionRecorder(
                 else -> "Platform source: $audioSource"
             }
         }
+
+        fun getDeviceDisplayName(): String {
+            val marketName = runCatching {
+                val systemPropertiesClass = Class.forName("android.os.SystemProperties")
+                val getMethod = systemPropertiesClass.getMethod("get", String::class.java)
+                val vivoReleaseName = getMethod.invoke(null, "ro.vivo.product.release.name") as? String
+                if (!vivoReleaseName.isNullOrBlank()) vivoReleaseName else {
+                    val genericMarketName = getMethod.invoke(null, "ro.product.marketname") as? String
+                    if (!genericMarketName.isNullOrBlank()) genericMarketName else null
+                }
+            }.getOrNull()
+
+            return when {
+                !marketName.isNullOrBlank() -> "$marketName (${Build.MODEL})"
+                Build.BRAND.equals("iQOO", ignoreCase = true) && Build.MODEL.equals("I2501", ignoreCase = true) -> "iQOO 15 (I2501)"
+                !Build.BRAND.isNullOrBlank() && !Build.BRAND.equals(Build.MANUFACTURER, ignoreCase = true) -> "${Build.BRAND} ${Build.MODEL}"
+                else -> "${Build.MANUFACTURER} ${Build.MODEL}"
+            }
+        }
     }
 
     private val sensorManager = context.getSystemService(SensorManager::class.java)
@@ -369,7 +388,7 @@ class SessionRecorder(
 
 
     fun deviceSummary(): String = buildString {
-        appendLine("Device: ${Build.MANUFACTURER} ${Build.MODEL}")
+        appendLine("Device: ${getDeviceDisplayName()}")
         appendLine("Android: ${Build.VERSION.RELEASE} (API ${Build.VERSION.SDK_INT})")
         appendLine("Accelerometer: ${accelerometer.name}")
         appendLine("Vendor: ${accelerometer.vendor}")
@@ -1565,8 +1584,10 @@ class SessionRecorder(
             val accelVerif = latestAccelerationVerification ?: AccelerationVerifier.runVerification(context)
             put("acceleration_verification", accelVerif.toJson())
 
+            put("brand", Build.BRAND)
             put("manufacturer", Build.MANUFACTURER)
             put("model", Build.MODEL)
+            put("device_display_name", getDeviceDisplayName())
             put("android_release", Build.VERSION.RELEASE)
             put("android_api", Build.VERSION.SDK_INT)
             put("session_start_elapsed_ns", sessionStartElapsedNs)
