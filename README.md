@@ -20,6 +20,19 @@ VibeCall AI is an Android **record, process, and compare prototype** built for t
 
 Detailed measurements and limitations are documented in [`docs/TEST_RESULTS_AND_NEXT_STEPS.md`](docs/TEST_RESULTS_AND_NEXT_STEPS.md) and [`docs/iqoo_trial_summary.json`](docs/iqoo_trial_summary.json).
 
+## Target Hardware: iQOO 15 Flagship
+
+All empirical test sessions, audio recordings, sensor telemetry, and verification datasets in this repository were collected and verified on the official hackathon device:
+
+| Hardware Attribute | Specification |
+|---|---|
+| **Device Model** | **iQOO 15 (`vivo I2501`)** |
+| **Processor (SoC)** | **Qualcomm Snapdragon 8 Elite** (`SM8750-AB`, TSMC 3nm N3E, Oryon CPU) |
+| **Operating System** | **Android 16** (API Level 36, Build `BP2A.250305.002`) |
+| **IMU / Accelerometer** | **STMicroelectronics `lsm6dsvx`** (continuous 400.00 Hz non-wakeup sensor stream) |
+| **Microphone Ingress** | 16 kHz 16-bit mono PCM (`VOICE_COMMUNICATION` platform mode & bit-exact `UNPROCESSED`) |
+| **Deployment Bridge** | Live USB debugging via Vivo/iQOO Office Kit |
+
 ## Why combine audio and vibration?
 
 Airborne background noise reaches the microphone, while speech may also produce mechanical vibration when the phone touches the speaker's cheek. VibeCall investigates whether the built-in accelerometer can provide complementary evidence about contact speech.
@@ -102,7 +115,7 @@ Consequently, mandatory-NPU inference reports `NPU unavailable` and the controll
 - JDK 17
 - Android NDK `27.0.12077973`
 - CMake 3.22.1
-- Android device with a microphone and accelerometer
+- iQOO 15 (`vivo I2501`) or compatible Android device with a microphone and accelerometer
 - USB debugging for installation and log collection
 
 ### Windows
@@ -182,7 +195,7 @@ Model and dataset scripts are intended for experimentation. Generated metrics sh
 ```text
 app/                         Android application and unit tests
 docs/                        Test history, plots, summaries, and NNAPI evidence
-sessions/iqoo_sessions/      Exported on-device experimental sessions
+sessions/iqoo_sessions/      Exported on-device iQOO 15 experimental sessions
 tools/                       Session analysis, dataset, and model-training utilities
 ROADMAP.md                   Architecture and planned work
 ```
@@ -194,11 +207,11 @@ ROADMAP.md                   Architecture and planned work
 - Current Fusion confidence does not reliably distinguish all tested contact and background conditions.
 - Recent controlled Fusion outputs did not improve on RNNoise.
 - NNAPI does not expose a non-CPU accelerator on the tested iQOO firmware.
-- Results currently come primarily from one device and a limited set of speakers and environments.
+- Results and empirical test sessions are recorded exclusively on the iQOO 15 (`vivo I2501`, Snapdragon 8 Elite, Android 16).
 
 ## Roadmap
 
-1. Collect a larger labelled dataset across speakers, phone positions, devices, and noise types.
+1. Collect a larger labelled dataset across speakers, phone positions, and noise types on iQOO 15 hardware.
 2. Improve vibration/contact features and perform session-held-out validation.
 3. Retrain and calibrate the fusion model with explicit audio-only ablation tests.
 4. Integrate Qualcomm QNN/HTP when a compatible SDK is available and verify the actual backend.

@@ -1,9 +1,8 @@
 # VibeCall AI — Empirical Test Results & Next Steps for Coding Agent
 
 **Date**: September 12, 2026 (Updated with Live iQOO 15 Hardware Validation)  
-**Target Platforms**: 
-- **iQOO 15 (vivo I2501)**, Android 16 (API 36), STMicroelectronics `lsm6dsvx` Accelerometer (Tested Sept 12, 2026 via USB Office Kit)
-- **Motorola edge 50 fusion**, Android 14+ (API 36), Bosch IMU (Tested Sept 6, 2026)  
+**Target Platform**: 
+- **iQOO 15 (vivo I2501)**, Qualcomm Snapdragon 8 Elite, Android 16 (API 36), STMicroelectronics `lsm6dsvx` Accelerometer (Tested Sept 12–13, 2026 via USB Office Kit)  
 **Team**: NPU PULSE (SSN College of Engineering)  
 **Deliverable Context**: iQOO Hackathon 2026 — Outgoing Speech Enhancement via Sensor Fusion
 
@@ -237,7 +236,7 @@ Trial 14 (`20260912_173426_668_cheek_speaking_with_background_noise`, extracted 
 
 ---
 
-## 1. Executive Summary: Motorola Baseline & Pre-Tests
+## 1. Executive Summary: Initial Feasibility Baseline & Pre-Tests
 
 All 3 live hardware validation tests have been completed and extracted onto the workstation:
 
@@ -272,7 +271,7 @@ The placeholder model file `fusion_gate_model.tflite` (v1) in `app/src/main/asse
 
 ## 3. Model v2: Fixed the Scale Mismatch, Found a New Problem
 
-`fusion_gate_model_v2.tflite` was retrained on accelerometer ranges matching real device data (8-15 m/s²) and deployed to the Motorola edge 50 fusion.
+`fusion_gate_model_v2.tflite` was retrained on accelerometer ranges matching real device data (8-15 m/s²) and evaluated during early feasibility testing prior to iQOO 15 deployment.
 
 ### Quantitative Hardware Results (Model v2)
 

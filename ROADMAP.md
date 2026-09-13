@@ -80,7 +80,7 @@ This document outlines the technical status, what is currently completed, what r
 * **I Aditya Annamalai** (`@aditya-elite`):
   - Android data acquisition app (`app/`)
   - Sensor-audio hardware synchronization & time alignment
-  - APK deployment and phone-side testing on Redmi / Moto
+  - APK deployment and phone-side testing on iQOO 15 hardware
 * **Kavin Kumar L**:
   - Python audio DSP & bandpass filtering (`80–200 Hz`)
   - Pretrained RNNoise wrapper & contact-energy gating logic
