@@ -1,6 +1,6 @@
 # VibeCall AI — Engineering Roadmap & Implementation Plan
 
-This document outlines the technical status, what is currently completed, what remains to be built, and actionable implementation steps for the team (**NPU PULSE**) for the **iQOO Hackathon 2026**.
+This document outlines the technical status, what is currently completed, what remains to be built, and actionable implementation steps for the team (**Dual Dooms**) for the **iQOO Hackathon 2026**.
 
 ---
 
@@ -81,11 +81,9 @@ This document outlines the technical status, what is currently completed, what r
   - Android data acquisition app (`app/`)
   - Sensor-audio hardware synchronization & time alignment
   - APK deployment and phone-side testing on iQOO 15 hardware
-* **Kavin Kumar L**:
-  - Python audio DSP & bandpass filtering (`80–200 Hz`)
+   - Python audio DSP & bandpass filtering (`80–200 Hz`)
   - Pretrained RNNoise wrapper & contact-energy gating logic
   - Fusion model evaluation & spectrogram metrics
-* **Hari Krishnan M**:
-  - Pitch deck refinement & presentation delivery
+   - Pitch deck refinement & presentation delivery
   - Recording the A/B listening audio samples & demo video
   - Hardware setup & latency benchmarking on iQOO hardware
