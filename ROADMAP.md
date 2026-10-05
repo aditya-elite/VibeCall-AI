@@ -1,6 +1,6 @@
 # VibeCall AI — Engineering Roadmap & Implementation Plan
 
-This document outlines the technical status, what is currently completed, what remains to be built, and actionable implementation steps for the team (**Dual Dooms**) for the **iQOO Hackathon 2026**.
+This document outlines the technical status, what is currently completed, what remains to be built, and actionable implementation steps for the team (**DualDooms**) for the **iQOO Hackathon 2026**.
 
 ---
 
