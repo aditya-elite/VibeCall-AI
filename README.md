@@ -219,11 +219,10 @@ ROADMAP.md                   Architecture and planned work
 
 ## Team
 
-**NPU PULSE — SSN College of Engineering, Chennai**
+**DualDooms — SSN College of Engineering, Chennai**
 
-- I Aditya Annamalai — Android sensing and pipeline engineering
-- Kavin Kumar L — multimodal fusion and audio processing
-- Hari Krishnan M — evaluation and latency benchmarking
+- I Aditya Annamalai 
+- Jeevan Sai V
 
 ## License
 
